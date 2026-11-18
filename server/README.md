@@ -8,7 +8,7 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5, #6, #7, #8 และ #9 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
+- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9 และ #10 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
 - Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
@@ -116,3 +116,12 @@ node --test server/*.test.mjs
 - ผลตรวจที่ค้างรอจับคู่มือถือจะถูกตรวจ `verifiedAt` ก่อนส่งเสียง หากเกิน 10 นาทีหรือเป็นข้อมูล cache เก่าที่ไม่มี timestamp จะทำเครื่องหมายหมดอายุ ไม่พูดเป็นยอดใหม่
 - Cloudflare Worker อัปโหลดโค้ด PR #9 สำเร็จและอ่านกลับตรวจพบตัวกรองความใหม่ พร้อม binding `DEVICES`, `RESULT_CACHE`, `SLIP_QUEUE` ครบ
 - Cloudflare Secrets ยังว่าง จึงยังไม่ผ่านการรับสลิปจริงจาก LINE OA ไป Thunder/Firebase และไม่เปลี่ยน Webhook เดิม
+
+## ตัดการแจ้งยอดสลิปเก่าจากเวลาต้นทางจริง (PR #10 · 18 พ.ย. 2569)
+
+- PR #10 merged (commit `417cc4a1e32620c0161f414a68fe15d5481203f9`); GitHub Actions ทั้งการทดสอบ Server และ Android Build ผ่าน
+- เมื่อ webhook LINE OA ส่งรูปที่ไม่มีฟิลด์ `timestamp` ตามมาตรฐาน LINE จะไม่ส่งเข้า Queue และไม่ประดิษฐ์เวลาใหม่แทน
+- Queue ที่ไม่มี `receivedAt` หรือหมดอายุ 10 นาที จะไม่ส่งสลิปตรวจ Thunder; ผลค้างที่ยังไม่ส่งจะถูกทำเครื่องหมายหมดอายุ
+- อายุยอดค้างนับจาก `receivedAt` ของเหตุการณ์ LINE ต้นฉบับ ไม่ใช่ `verifiedAt` ของการตรวจ Thunder ในเวลาถัดมา
+- อัปโหลดโค้ดล่าสุดขึ้น Cloudflare Worker `line-oa-slip-speaker` สำเร็จและอ่านโค้ดบน Worker กลับพบเงื่อนไข timestamp ทั้งหมด พร้อมคง Binding DEVICES, RESULT_CACHE, SLIP_QUEUE ครบ
+- Cloudflare Secrets ยังว่าง จึงยังไม่พร้อมตรวจสลิปจาก LINE OA จริง, ส่ง FCM และยืนยันเสียงบน vivo V30 Pro; ไม่เปลี่ยน webhook เดิม และไม่ให้ติดตั้ง APK ใหม่ระหว่างทดสอบ
