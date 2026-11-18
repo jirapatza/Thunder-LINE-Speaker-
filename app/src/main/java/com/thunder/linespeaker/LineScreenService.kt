@@ -47,8 +47,8 @@ class LineScreenService : AccessibilityService() {
         captureBusy = true
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(result: ScreenshotResult) {
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                         val buffer = result.hardwareBuffer
                         val bitmap: Bitmap? = try {
                             Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
