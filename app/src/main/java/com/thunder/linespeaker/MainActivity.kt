@@ -30,7 +30,7 @@ class MainActivity : Activity() {
             textSize = 26f
         })
         layout.addView(TextView(this).apply {
-            text = "ลูกค้าทัก LINE: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\nThunder ส่งยอดเป็นข้อความ: พูดยอดเงิน\nภาพสลิป: อ่านรูปที่เปิดหรือแชร์ได้เมื่อ Android เข้าถึงภาพ\n\nทุกอย่างประมวลผลในเครื่อง"
+            text = "ลูกค้าทัก LINE: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\nThunder ส่งยอดเป็นข้อความ: พูดยอดเงิน\nภาพสลิป: อ่านรูปที่เปิดหรือแชร์ได้เมื่อ Android เข้าถึงภาพ\n\nOCR ภายในเครื่องไม่ยืนยันการโอนเงินจริง\\nสลิป LINE OA ที่ตรวจจริงใช้ Cloudflare / Thunder / Firebase เมื่อเชื่อมต่อแล้ว"
             textSize = 16f
         })
         @Suppress("DEPRECATION")
@@ -49,7 +49,7 @@ class MainActivity : Activity() {
             })
         }
         addSwitch("พูดเมื่อลูกค้าทัก LINE", Preferences.customers(this)) { Preferences.setCustomers(this, it) }
-        addSwitch("พูดยอดเงินจาก Thunder", Preferences.payments(this)) { Preferences.setPayments(this, it) }
+        addSwitch("พูดยอดเงินเมื่อสลิปตรวจผ่าน Thunder จริง", Preferences.payments(this)) { Preferences.setPayments(this, it) }
         addSwitch("OCR ภาพที่เปิดอยู่ใน LINE", Preferences.screenOcr(this)) { Preferences.setScreenOcr(this, it) }
         val pairingField = EditText(this).apply {
             hint = "รหัสจับคู่ส่วนตัว (เมื่อเซิร์ฟเวอร์พร้อม)"
