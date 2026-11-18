@@ -5,38 +5,71 @@ import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-/** Shares a single Thai TTS engine between the notification and screen services. */
+/**
+ * One Thai TTS engine shared by LINE text, OCR and verified payment messages.
+ * Android initializes TTS asynchronously; retain every distinct speech request
+ * in FIFO order rather than overwriting earlier messages with a single pending
+ * string. Acceptance by TTS is NOT proof audio reached the device's speaker.
+ */
 object SpeechEngine {
     private var engine: TextToSpeech? = null
     private var ready = false
-    private var pending: String? = null
-    private val recentlySpoken = LinkedHashMap<String, Long>()
+    private var utteranceSequence = 0L
+    private val pending = PendingSpeechQueue()
 
     @Synchronized
     fun speak(context: Context, phrase: String, key: String, dedupeMs: Long = 90_000L) {
-        val now = SystemClock.elapsedRealtime()
-        val previous = recentlySpoken[key]
-        if (previous != null && now - previous < dedupeMs) return
-        recentlySpoken[key] = now
-        recentlySpoken.entries.removeAll { now - it.value > 5 * 60_000L }
-        val instance = engine
-        if (instance == null) {
-            pending = phrase
-            engine = TextToSpeech(context.applicationContext) { status ->
-                synchronized(this) {
-                    if (status == TextToSpeech.SUCCESS) {
-                        val result = engine?.setLanguage(Locale("th", "TH"))
-                        ready = result != TextToSpeech.LANG_MISSING_DATA &&
-                            result != TextToSpeech.LANG_NOT_SUPPORTED
-                        if (ready) pending?.let { engine?.speak(it, TextToSpeech.QUEUE_ADD, null, "initial") }
-                    }
-                    pending = null
+        if (!pending.offer(phrase, key, SystemClock.elapsedRealtime(), dedupeMs)) return
+        if (ready) {
+            drain()
+        } else if (engine == null) {
+            initialize(context.applicationContext)
+        }
+    }
+
+    private fun initialize(context: Context) {
+        engine = TextToSpeech(context) { status ->
+            synchronized(this) {
+                val tts = engine
+                if (tts != null && status == TextToSpeech.SUCCESS) {
+                    val language = tts.setLanguage(Locale("th", "TH"))
+                    ready = language != TextToSpeech.LANG_MISSING_DATA &&
+                        language != TextToSpeech.LANG_NOT_SUPPORTED
+                } else {
+                    ready = false
+                }
+                if (ready) {
+                    drain()
+                } else {
+                    // Keep the queue if the TTS engine fails; a later incoming
+                    // message can attempt to initialize the engine again.
+                    tts?.shutdown()
+                    engine = null
                 }
             }
-        } else if (ready) {
-            instance.speak(phrase, TextToSpeech.QUEUE_ADD, null, "speak-$now")
-        } else {
-            pending = phrase
+        }
+    }
+
+    /** Called while holding the same monitor as speak(). */
+    private fun drain() {
+        val tts = engine ?: return
+        while (ready) {
+            val next = pending.peek() ?: return
+            val result = tts.speak(
+                next.phrase,
+                TextToSpeech.QUEUE_ADD,
+                null,
+                "thunder-${++utteranceSequence}",
+            )
+            if (result == TextToSpeech.SUCCESS) {
+                pending.markAccepted(SystemClock.elapsedRealtime())
+            } else {
+                // Do not record this event as already spoken if TTS rejected it.
+                ready = false
+                tts.shutdown()
+                engine = null
+                return
+            }
         }
     }
 }
