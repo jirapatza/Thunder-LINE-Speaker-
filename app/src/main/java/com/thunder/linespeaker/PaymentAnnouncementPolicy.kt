@@ -14,10 +14,17 @@ internal object PaymentAnnouncementPolicy {
         source: Source,
         type: String?,
         eventId: String?,
-        amountText: String?
+        amountText: String?,
+        eventTimeText: String?,
+        nowMs: Long = System.currentTimeMillis()
     ): BigDecimal? {
         if (source != Source.VERIFIED_FCM || type != "payment_matched" ||
             eventId == null || !Regex("^[0-9]{1,32}$").matches(eventId)) return null
+        // Cloudflare signs the FCM data using its configured Firebase project.
+        // Never speak a delayed or legacy push without an original LINE time.
+        val eventTime = eventTimeText?.toLongOrNull() ?: return null
+        if (eventTime < nowMs - 10 * 60_000L ||
+            eventTime > nowMs + 60_000L) return null
         val amount = amountText?.toBigDecimalOrNull() ?: return null
         if (amount <= BigDecimal.ZERO || amount > BigDecimal("100000000")) return null
         return amount
