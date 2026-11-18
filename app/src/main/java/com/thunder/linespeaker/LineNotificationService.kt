@@ -66,7 +66,28 @@ class LineNotificationService : NotificationListenerService() {
             extras.getParcelable(Notification.EXTRA_PICTURE_ICON, android.graphics.drawable.Icon::class.java)
                 ?.loadDrawable(this)
         } else null
-        val image = bitmap ?: (drawable as? BitmapDrawable)?.bitmap ?: return
+        val image = bitmap ?: (drawable as? BitmapDrawable)?.bitmap
+        if (image == null) {
+            // Some MessagingStyle apps attach a readable image Uri instead of a BigPicture.
+            // LINE is not required to expose one; unreadable Uris are ignored safely.
+            if (Build.VERSION.SDK_INT >= 30) {
+                val parcels = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+                if (parcels != null) {
+                    val messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(parcels)
+                    for (message in messages.takeLast(2)) {
+                        val uri = message.dataUri
+                        if (uri != null && message.dataMimeType?.startsWith("image/") == true) {
+                            ImageReader.fromUri(this, uri) { amount ->
+                                if (amount != null && Preferences.payments(this)) {
+                                    SpeechEngine.speak(this, "พบยอดเงิน $amount บาทจากรูปภาพ", "$key:$amount")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         ImageReader.fromBitmap(image) { amount ->
             if (amount != null && Preferences.payments(this)) {
                 // OCR reads a picture, not bank confirmation. Never claim verification from image alone.
