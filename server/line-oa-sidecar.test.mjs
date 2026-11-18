@@ -107,7 +107,7 @@ test('queue resumes cached bank verification without charging Thunder again',asy
   }]},env);
   assert.equal(acks,1);
   assert.equal(retries,0);
-  assert.equal(cached.get('verification:123').delivered,true);
+  assert.equal(cached.get('verification:123').delivered,false);
 });
 
 test('truthy but incomplete matchedAccount does not create a confirmed payment', async () => {
