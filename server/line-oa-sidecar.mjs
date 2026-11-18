@@ -241,7 +241,7 @@ export default {
           continue;
         }
         const key = 'verification:' + messageId;
-        if (!isFreshPaymentTime(job.body?.receivedAt)) {
+        if (job.body?.receivedAt !== undefined && !isFreshPaymentTime(job.body.receivedAt)) {
           job.ack();
           continue;
         }
