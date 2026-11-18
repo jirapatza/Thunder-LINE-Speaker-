@@ -5,7 +5,7 @@ import { createHmac } from 'node:crypto';
 const enc = new TextEncoder();
 const signature = (secret, raw) => createHmac('sha256', secret).update(raw).digest('base64');
 const event = JSON.stringify({ events: [
-  { type: 'message', webhookEventId: 'e1', message: { id: '123456789', type: 'image' } },
+  { type: 'message', webhookEventId: 'e1', timestamp: Date.now(), message: { id: '123456789', type: 'image' } },
   { type: 'message', webhookEventId: 'e2', message: { id: '555', type: 'text', text: 'hello' } },
 ] });
 
@@ -179,7 +179,7 @@ test('image events are deduplicated within webhook payload and never silently cu
   const batches=[];
   const env={SLIP_QUEUE:{sendBatch:async batch=>batches.push(batch)}};
   const events=Array.from({length:103},(_,i)=>({
-    type:'message',webhookEventId:'e'+i,
+    type:'message',webhookEventId:'e'+i,timestamp:Date.now(),
     message:{type:'image',id:String(1000+i)},
   }));
   events.push({...events[0],webhookEventId:'redelivery'});
@@ -226,6 +226,7 @@ test('rejects old and far-future LINE images before queueing for verification', 
     {type:'message',timestamp:now-11*60_000,message:{type:'image',id:'101'}},
     {type:'message',timestamp:now,message:{type:'image',id:'102'}},
     {type:'message',timestamp:now+5*60_000,message:{type:'image',id:'103'}},
+    {type:'message',message:{type:'image',id:'104'}},
   ]},env);
   assert.equal(count,1);
   assert.equal(sent[0].body.messageId,'102');
@@ -248,4 +249,69 @@ test('pending payment notifies zero phones after being older than ten minutes',a
   assert.equal(out.delivered,0);
   assert.equal(state.get('verification:123').expired,true);
   assert.equal(state.get('verification:123').delivered,true);
+});
+
+test('old source timestamps remain expired even if Thunder verification just happened', async()=>{
+  const now=Date.now();
+  const state=new Map([['verification:123',{result:{
+    type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123',
+  },receivedAt:now-11*60_000,verifiedAt:now,delivered:false}]]);
+  const env={
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      list:async()=>({keys:[{name:'verification:123'}],list_complete:true}),
+      get:async k=>state.get(k),
+      put:async(k,v)=>state.set(k,JSON.parse(v)),
+    },
+  };
+  const out=await deliverPendingResults(env);
+  assert.equal(out.delivered,0);
+  assert.equal(state.get('verification:123').expired,true);
+  assert.equal(state.get('verification:123').delivered,true);
+});
+
+test('legacy missing-timestamp queue job is discarded without calling Thunder',async()=>{
+  const stored=new Map([['verification:123',{result:{
+    type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123',
+  },verifiedAt:Date.now(),delivered:false}]]);
+  let acks=0,retries=0;
+  const env={
+    LINE_CHANNEL_SECRET:'s',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
+    SLIP_QUEUE:{sendBatch:async()=>{}},
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      get:async k=>stored.get(k),
+      put:async(k,v)=>stored.set(k,JSON.parse(v)),
+    },
+  };
+  await worker.queue({messages:[{body:{messageId:'123'},
+    ack(){acks++},retry(){retries++}}]},env);
+  assert.equal(acks,1);
+  assert.equal(retries,0);
+  assert.equal(stored.get('verification:123').expired,true);
+});
+
+test('fresh source timestamp retains verified result awaiting phone pairing',async()=>{
+  const now=Date.now();
+  const stored=new Map([['verification:123',{result:{
+    type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123',
+  },receivedAt:now,verifiedAt:now,delivered:false}]]);
+  let acks=0,retries=0;
+  const env={
+    LINE_CHANNEL_SECRET:'s',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
+    SLIP_QUEUE:{sendBatch:async()=>{}},
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      get:async k=>stored.get(k),
+      put:async(k,v)=>stored.set(k,JSON.parse(v)),
+    },
+  };
+  await worker.queue({messages:[{body:{messageId:'123',receivedAt:now},
+    ack(){acks++},retry(){retries++}}]},env);
+  assert.equal(acks,1);
+  assert.equal(retries,0);
+  assert.equal(stored.get('verification:123').delivered,false);
 });
