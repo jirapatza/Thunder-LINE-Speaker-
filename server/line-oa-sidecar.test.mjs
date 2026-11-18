@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { verifySignature, verifySlipImage, dispatchResult, deliverPendingResults, enqueueImageEvents } from './line-oa-sidecar.mjs';
+import worker, { verifySignature, verifySlipImage, dispatchResult, deliverPendingResults, enqueueImageEvents, isFreshPaymentTime } from './line-oa-sidecar.mjs';
 import { createHmac } from 'node:crypto';
 const enc = new TextEncoder();
 const signature = (secret, raw) => createHmac('sha256', secret).update(raw).digest('base64');
@@ -25,7 +25,10 @@ test('accepts signed image events and rejects unknown or unsigned requests', asy
   const good = await worker.fetch(new Request(url, {method:'POST',body:event,headers:{'x-line-signature':signature('s',event)}}),env);
   assert.equal(good.status,202);
   assert.equal((await good.json()).queued,1);
-  assert.deepEqual(batch,[{body:{messageId:'123456789',eventId:'e1'}}]);
+  assert.equal(batch.length,1);
+  assert.equal(batch[0].body.messageId,'123456789');
+  assert.equal(batch[0].body.eventId,'e1');
+  assert.ok(isFreshPaymentTime(batch[0].body.receivedAt));
   const bad = await worker.fetch(new Request(url,{method:'POST',body:event,headers:{'x-line-signature':'invalid'}}),env);
   assert.equal(bad.status,401);
   const unconfigured = await worker.fetch(new Request(url,{method:'POST',body:event}),{});
@@ -107,7 +110,8 @@ test('queue resumes cached bank verification without charging Thunder again',asy
   }]},env);
   assert.equal(acks,1);
   assert.equal(retries,0);
-  assert.equal(cached.get('verification:123').delivered,false);
+  assert.equal(cached.get('verification:123').delivered,true);
+  assert.equal(cached.get('verification:123').expired,true);
 });
 
 test('truthy but incomplete matchedAccount does not create a confirmed payment', async () => {
@@ -141,10 +145,11 @@ test('when no phone is paired, verified slip is held as pending and queue acknow
   await worker.queue({messages:[{body:{messageId:'123'},ack(){acks++},retry(){retries++}}]},env);
   assert.equal(acks,1);
   assert.equal(retries,0);
-  assert.equal(state.get('verification:123').delivered,false);
+  assert.equal(state.get('verification:123').delivered,true);
+  assert.equal(state.get('verification:123').expired,true);
   const pending=await deliverPendingResults(env);
   assert.equal(pending.delivered,0);
-  assert.equal(state.get('verification:123').delivered,false);
+  assert.equal(state.get('verification:123').delivered,true);
 });
 
 test('invalid queue message is acknowledged instead of calling Thunder',async()=>{
@@ -206,4 +211,41 @@ test('health never claims end-to-end live delivery without a real-device test', 
   assert.equal(ready.endToEndVerified,false);
   assert.equal(ready.originalWebhookForwarding,'not_verified');
   assert.equal(ready.pairedDevices,1);
+});
+
+test('rejects old and far-future LINE images before queueing for verification', async()=>{
+  const now=Date.now();
+  assert.equal(isFreshPaymentTime(now),true);
+  assert.equal(isFreshPaymentTime(now-9*60_000),true);
+  assert.equal(isFreshPaymentTime(now-11*60_000),false);
+  assert.equal(isFreshPaymentTime(now+2*60_000),false);
+  assert.equal(isFreshPaymentTime(undefined),false);
+  const sent=[];
+  const env={SLIP_QUEUE:{sendBatch:async items=>sent.push(...items)}};
+  const count=await enqueueImageEvents({events:[
+    {type:'message',timestamp:now-11*60_000,message:{type:'image',id:'101'}},
+    {type:'message',timestamp:now,message:{type:'image',id:'102'}},
+    {type:'message',timestamp:now+5*60_000,message:{type:'image',id:'103'}},
+  ]},env);
+  assert.equal(count,1);
+  assert.equal(sent[0].body.messageId,'102');
+  assert.equal(sent[0].body.receivedAt,now);
+});
+test('pending payment notifies zero phones after being older than ten minutes',async()=>{
+  const state=new Map([['verification:123',{result:{
+    type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123',
+  },verifiedAt:Date.now()-11*60_000,delivered:false}]]);
+  const env={
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      list:async()=>({keys:[{name:'verification:123'}],list_complete:true}),
+      get:async k=>state.get(k),
+      put:async(k,v)=>state.set(k,JSON.parse(v)),
+    },
+  };
+  const out=await deliverPendingResults(env);
+  assert.equal(out.delivered,0);
+  assert.equal(state.get('verification:123').expired,true);
+  assert.equal(state.get('verification:123').delivered,true);
 });
