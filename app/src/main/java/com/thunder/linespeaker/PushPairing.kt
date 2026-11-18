@@ -78,7 +78,7 @@ object PushPairing {
                         "Firebase: " + if (firebase) "มีคีย์" else "ยังไม่มีคีย์",
                         "อุปกรณ์ที่จับคู่: $devices",
                         "การอ่านออกเสียงบนมือถือจริง: ยังไม่ได้ยืนยัน"
-                    ).joinToString("\\n")
+                    ).joinToString("\n")
                 }
             } catch (_: Exception) {
                 "ตรวจ Cloudflare ไม่สำเร็จ (ตรวจอินเทอร์เน็ตหรือ URL)"
