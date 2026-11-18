@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { verifySignature, verifySlipImage, dispatchResult } from './line-oa-sidecar.mjs';
+import worker, { verifySignature, verifySlipImage, dispatchResult, deliverPendingResults } from './line-oa-sidecar.mjs';
 import { createHmac } from 'node:crypto';
 const enc = new TextEncoder();
 const signature = (secret, raw) => createHmac('sha256', secret).update(raw).digest('base64');
@@ -37,7 +37,7 @@ test('downloads an image from LINE and passes it to Thunder by multipart upload'
   const mock = async (url,opts) => {
     urls.push([url,opts]);
     if (url.startsWith('https://api-data.line.me/')) return new Response(new Uint8Array([255,216,255]),{headers:{'content-type':'image/jpeg'}});
-    if (url==='https://api.thunder.in.th/v2/verify/bank') return Response.json({success:true,data:{amountInSlip:180,matchedAccount:{bank:'bank'},isDuplicate:false}});
+    if (url==='https://api.thunder.in.th/v2/verify/bank') return Response.json({success:true,data:{amountInSlip:180,matchedAccount:{bank:{code:'004'},bankNumber:'123-4-56789-0'},isDuplicate:false}});
     throw Error('Unexpected request');
   };
   const result = await verifySlipImage('123',{LINE_CHANNEL_ACCESS_TOKEN:'line-token',THUNDER_API_KEY:'thunder-token'},mock);
@@ -52,7 +52,7 @@ test('downloads an image from LINE and passes it to Thunder by multipart upload'
 });
 
 test('duplicate or unmatched slip never becomes a confirmed received payment', async () => {
-  for (const [matchedAccount,isDuplicate,want] of [[null,false,'slip_unmatched'],[{bank:'yes'},true,'duplicate_slip']]) {
+  for (const [matchedAccount,isDuplicate,want] of [[null,false,'slip_unmatched'],[{bank:{code:'004'},bankNumber:'12345'},true,'duplicate_slip']]) {
     const mock = async url => url.startsWith('https://api-data.line.me/')
       ? new Response(new Uint8Array([255,216,255]),{headers:{'content-type':'image/jpeg'}})
       : Response.json({success:true,data:{amountInSlip:250,matchedAccount,isDuplicate}});
@@ -108,4 +108,52 @@ test('queue resumes cached bank verification without charging Thunder again',asy
   assert.equal(acks,1);
   assert.equal(retries,0);
   assert.equal(cached.get('verification:123').delivered,true);
+});
+
+test('truthy but incomplete matchedAccount does not create a confirmed payment', async () => {
+  for (const malformed of [{}, {bank:{}}, {bank:'bank'}, 'matched', true]) {
+    const mock = async url => url.startsWith('https://api-data.line.me/')
+      ? new Response(new Uint8Array([255,216,255]), {headers:{'content-type':'image/jpeg'}})
+      : Response.json({success:true,data:{amountInSlip:150,matchedAccount:malformed,isDuplicate:false}});
+    const result = await verifySlipImage('123', {LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k'}, mock);
+    assert.equal(result.type,'slip_unmatched');
+    assert.equal(result.matchedAccount,false);
+  }
+});
+
+test('when no phone is paired, verified slip is held as pending and queue acknowledges safely', async () => {
+  const state = new Map([['verification:123', {
+    result:{type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123'},
+    delivered:false,
+  }]]);
+  const env = {
+    LINE_CHANNEL_SECRET:'s',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
+    SLIP_QUEUE:{sendBatch:async()=>{}}, DEVICE_PAIRING_SECRET:'x'.repeat(32),
+    FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      get:async key => state.get(key),
+      put:async (key,value) => state.set(key,JSON.parse(value)),
+      list:async()=>({keys:[{name:'verification:123'}],list_complete:true}),
+    },
+  };
+  let acks=0,retries=0;
+  await worker.queue({messages:[{body:{messageId:'123'},ack(){acks++},retry(){retries++}}]},env);
+  assert.equal(acks,1);
+  assert.equal(retries,0);
+  assert.equal(state.get('verification:123').delivered,false);
+  const pending=await deliverPendingResults(env);
+  assert.equal(pending.delivered,0);
+  assert.equal(state.get('verification:123').delivered,false);
+});
+
+test('invalid queue message is acknowledged instead of calling Thunder',async()=>{
+  let acks=0;
+  await worker.queue({messages:[{body:{messageId:'not a valid ID'},ack(){acks++},retry(){throw Error('unexpected retry')}}]},{
+    LINE_CHANNEL_SECRET:'s',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
+    SLIP_QUEUE:{sendBatch:async()=>{}},RESULT_CACHE:{get:async()=>{throw Error('must not read')},put:async()=>{}},
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+  });
+  assert.equal(acks,1);
 });
