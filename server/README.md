@@ -8,11 +8,12 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว; Android Build ผ่าน GitHub Actions ใน PR #3
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2 และ #3 merged เข้า `main`
-- Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ
+- GitHub: PR #1, #2, #3 และ #5 merged เข้า `main`; PR #5 เป็นการแก้ความปลอดภัยการตรวจยอดและระบบส่ง FCM
+- Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดแก้ไขล่าสุดจาก PR #5 แล้วและอ่านกลับตรวจพบการเก็บยอดรอส่งกับการตรวจบัญชีที่เข้มงวดขึ้น
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
 - Worker ไม่มีคีย์ LINE / Thunder / Firebase อยู่ใน Secrets จึงอยู่ในโหมดปิดการรับงานจริง (`needs_configuration`); **ไม่ได้ส่งสลิปจริง**
+- หากสลิปผ่าน Thunder แต่ยังไม่มีมือถือจับคู่ ระบบจะเก็บผลใน RESULT_CACHE (TTL 3 วัน) โดย **ยังไม่ทำเครื่องหมายว่าส่งสำเร็จ** และจะพยายามส่งเมื่อมีการจับคู่อุปกรณ์สำเร็จ; FCM ตอบรับไม่ได้ยืนยันว่าเสียงดังบนมือถือจริง
 - ไม่ได้เปลี่ยน Webhook LINE OA เดิม และไม่ได้แก้โปรเจกต์ Bombim00/Project-1
 
 ส่วนที่ต้องมีเพื่อเปิดใช้งานจริง:
@@ -71,7 +72,7 @@ Endpoints: `GET /` ข้อความสถานะ, `GET /health` readiness
 node --test server/*.test.mjs
 ```
 
-หลักฐาน: GitHub PR #3 (FCM + tests + Android CI), Cloudflare API deployment สำเร็จวันที่ 18 พ.ย. 2569; ยังไม่ยืนยัน production HTTP GET จากเครือข่ายภายนอก และยังไม่มี end-to-end transfer จริง
+หลักฐาน: GitHub PR #3 (FCM + Android CI), PR #5 (fail-closed slip verification, pending FCM delivery; server CI และ Android CI ผ่าน), Cloudflare API upload/deployment ล่าสุดสำเร็จ 18 พ.ย. 2569; ยังไม่ยืนยัน production HTTP GET จากเครือข่ายภายนอก และยังไม่มี end-to-end transfer จริง
 
 เอกสารอ้างอิง:
 - https://developers.line.biz/en/docs/messaging-api/receiving-messages/
