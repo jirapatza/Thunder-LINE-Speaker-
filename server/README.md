@@ -8,7 +8,7 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5, #6, #7 และ #8 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
+- GitHub: PR #1, #2, #3, #5, #6, #7, #8 และ #9 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
 - Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
@@ -107,3 +107,12 @@ node --test server/*.test.mjs
 - GitHub PR #8 merged: `3943095d63466e4ead648032201476e67b5a6aa7` และ Android Build / tests ผ่าน
 - **ยังไม่มีการทดสอบเสียงผ่านลำโพงบน vivo V30 Pro จริง** โดยเฉพาะเมื่อแอปถูกปิด/เครื่องล็อกหน้าจอ; การรับคำสั่งของ TTS ไม่ใช่หลักฐานว่าได้ยินเสียง
 - Cloudflare Worker ตรวจล่าสุดยังมี bindings DEVICES, RESULT_CACHE, SLIP_QUEUE แต่ยังไม่มี Secrets สำหรับ LINE/Thunder/Firebase จึงยังไม่เปิดการตรวจสลิปอัตโนมัติจริง
+
+
+## ป้องกันแจ้งยอดเงินเก่า (PR #9 · 18 พ.ย. 2569)
+- PR #9 merged commit `2dfb31b714f6d88b642c4d5af504f85752aa2502`; GitHub Actions ทดสอบฝั่ง Server และ Android ผ่าน
+- เหตุการณ์ LINE OA ที่ระบุ timestamp เก่ากว่า 10 นาที หรือใหม่เกิน 60 วินาทีจะไม่ส่งตรวจซ้ำ
+- Cloudflare Queue เก็บ `receivedAt` จาก timestamp ของ LINE; หากคิวสะสมจนเกิน 10 นาที จะไม่เรียกยอดนั้นเป็นเงินเข้าใหม่
+- ผลตรวจที่ค้างรอจับคู่มือถือจะถูกตรวจ `verifiedAt` ก่อนส่งเสียง หากเกิน 10 นาทีหรือเป็นข้อมูล cache เก่าที่ไม่มี timestamp จะทำเครื่องหมายหมดอายุ ไม่พูดเป็นยอดใหม่
+- Cloudflare Worker อัปโหลดโค้ด PR #9 สำเร็จและอ่านกลับตรวจพบตัวกรองความใหม่ พร้อม binding `DEVICES`, `RESULT_CACHE`, `SLIP_QUEUE` ครบ
+- Cloudflare Secrets ยังว่าง จึงยังไม่ผ่านการรับสลิปจริงจาก LINE OA ไป Thunder/Firebase และไม่เปลี่ยน Webhook เดิม
