@@ -85,7 +85,13 @@ export async function verifySlipImage(messageId, env, fetchFn = fetch) {
   if (result?.success !== true || !data) throw new Error('thunder_invalid_response');
   const amount = Number(data.amountInSlip);
   if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) throw new Error('invalid_verified_amount');
-  const matched = Boolean(data.matchedAccount);
+  // Thunder declares matchedAccount as an object with bank/account details, or null.
+  // Never treat arbitrary truthy JSON (including a string or an empty object) as a match.
+  const account = data.matchedAccount;
+  const matched = account !== null &&
+    typeof account === 'object' && !Array.isArray(account) &&
+    typeof account.bankNumber === 'string' && account.bankNumber.trim().length > 0 &&
+    typeof account.bank?.code === 'string' && account.bank.code.trim().length > 0;
   const duplicate = data.isDuplicate === true;
   return {
     type: matched && !duplicate ? 'payment_matched' : (duplicate ? 'duplicate_slip' : 'slip_unmatched'),
@@ -106,8 +112,44 @@ export async function dispatchResult(result, env, fetchFn = fetch) {
   });
   if (!response.ok) throw new Error(`event_sink_${response.status}`);
 }
+/**
+ * Complete unsent verified results after a device is paired. Each entry is
+ * retained at most three days; FCM acceptance is not proof the phone spoke.
+ * Android filters duplicates by message ID.
+ */
+export async function deliverPendingResults(env, pageLimit = 100, maxPages = 5) {
+  if (!env.RESULT_CACHE?.list || !pushConfigured(env)) return { scanned: 0, delivered: 0 };
+  let cursor;
+  let scanned = 0;
+  let delivered = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const listing = await env.RESULT_CACHE.list({
+      prefix: 'verification:', limit: pageLimit, ...(cursor ? {cursor} : {}),
+    });
+    for (const item of listing.keys || []) {
+      const state = await env.RESULT_CACHE.get(item.name, 'json');
+      if (!state || state.delivered || !state.result) continue;
+      scanned++;
+      const outcome = await sendPaymentToDevices(state.result, env);
+      if (outcome.noDevices) return {scanned, delivered};
+      if (outcome.ignored || outcome.sent > 0) {
+        if (env.EVENT_SINK_URL && env.EVENT_SINK_SECRET) {
+          await dispatchResult(state.result, env);
+        }
+        await env.RESULT_CACHE.put(item.name,
+          JSON.stringify({result:state.result,delivered:true}),
+          {expirationTtl:3 * 86400});
+        delivered++;
+      }
+    }
+    if (listing.list_complete || !listing.cursor) break;
+    cursor = listing.cursor;
+  }
+  return {scanned, delivered};
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/') return new Response('LINE OA Slip Speaker พร้อมทำงาน (รอกำหนดค่าระบบเชื่อมต่อ)', {headers:{'content-type':'text/plain; charset=utf-8'}});
     if (request.method === 'GET' && path === '/health') {
@@ -126,7 +168,15 @@ export default {
       });
     }
     if (request.method === 'POST' && path === '/register-device') {
-      return registerDevice(request, env);
+      const response = await registerDevice(request, env);
+      // A user may pair after a slip was verified. Drain pending verifications
+      // in the background rather than dropping the money announcement.
+      if (response.ok && ctx?.waitUntil) {
+        ctx.waitUntil(deliverPendingResults(env).catch(() => {
+          // A later registration / queue retry can resume unsent results.
+        }));
+      }
+      return response;
     }
     if (request.method !== 'POST' || !['/line-webhook', '/forwarded-webhook'].includes(path)) return json({ error: 'not_found' }, 404);
     if (!requirements(env)) return json({ error: 'not_configured' }, 503);
@@ -166,7 +216,13 @@ export default {
           await env.RESULT_CACHE.put(key, JSON.stringify(state), {expirationTtl: 3 * 86400});
         }
         if (!state.delivered) {
-          await sendPaymentToDevices(state.result, env);
+          const outcome = await sendPaymentToDevices(state.result, env);
+          // No paired devices or a token rejected by FCM: persist as pending.
+          // Never mark a verified payment delivered without an accepted send.
+          if (outcome.noDevices || (!outcome.ignored && outcome.sent === 0)) {
+            job.ack();
+            continue;
+          }
           if (env.EVENT_SINK_URL && env.EVENT_SINK_SECRET) {
             await dispatchResult(state.result, env);
           }
