@@ -44,13 +44,23 @@ function isImageMessage(e) {
 }
 export async function enqueueImageEvents(payload, env) {
   const events = Array.isArray(payload?.events) ? payload.events : [];
-  const images = events.filter(isImageMessage).slice(0, 50);
-  if (images.length === 0) return 0;
+  // LINE may redeliver the same event. Avoid duplicated queue items within
+  // the current payload; the verification cache handles later redeliveries.
+  // Do not silently discard events beyond an arbitrary 50-item limit.
+  const unique = new Map();
+  for (const e of events) {
+    if (isImageMessage(e) && !unique.has(e.message.id)) unique.set(e.message.id, e);
+  }
+  if (!unique.size) return 0;
   if (!env.SLIP_QUEUE?.sendBatch) throw new Error('queue_not_configured');
-  await env.SLIP_QUEUE.sendBatch(images.map(e => ({ body: {
-    messageId: e.message.id,
-    eventId: String(e.webhookEventId || e.message.id).slice(0, 100),
-  } })));
+  const images = [...unique.values()];
+  for (let start = 0; start < images.length; start += 100) {
+    const batch = images.slice(start, start + 100).map(e => ({body: {
+      messageId: e.message.id,
+      eventId: String(e.webhookEventId || e.message.id).slice(0, 100),
+    }}));
+    await env.SLIP_QUEUE.sendBatch(batch);
+  }
   return images.length;
 }
 async function lineImage(messageId, token, fetchFn) {
@@ -162,7 +172,11 @@ export default {
       }
       return json({
         service: 'line-oa-slip-speaker',
-        status: requirements(env) && pairedDevices > 0 ? 'configured' : 'needs_configuration',
+        // Configured credentials do NOT mean the original LINE webhook is
+        // forwarding events, or that a vivo handset has successfully spoken.
+        status: requirements(env) && pairedDevices > 0 ? 'ready_for_live_test' : 'needs_configuration',
+        endToEndVerified: false,
+        originalWebhookForwarding: 'not_verified',
         pairedDevices,
         lineConfigured: Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN),
         thunderConfigured: Boolean(env.THUNDER_API_KEY),
