@@ -92,7 +92,9 @@ export async function verifySlipImage(messageId, env, fetchFn = fetch) {
     typeof account === 'object' && !Array.isArray(account) &&
     typeof account.bankNumber === 'string' && account.bankNumber.trim().length > 0 &&
     typeof account.bank?.code === 'string' && account.bank.code.trim().length > 0;
-  const duplicate = data.isDuplicate === true;
+  // The API declares isDuplicate as a required boolean. Missing or malformed
+  // duplicate status must never be announced as a new deposit.
+  const duplicate = data.isDuplicate !== false;
   return {
     type: matched && !duplicate ? 'payment_matched' : (duplicate ? 'duplicate_slip' : 'slip_unmatched'),
     amount: Number(amount.toFixed(2)),
