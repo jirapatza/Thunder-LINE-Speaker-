@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync } from 'node:crypto';
 import {
-  isConfirmedPayment, registerDevice, sendPaymentToDevices, pushConfigured,
+  isConfirmedPayment, registerDevice, sendPaymentToDevices, pushConfigured, isFreshPaymentEventTime,
 } from './fcm-delivery.mjs';
 
 function memoryKv() {
@@ -31,7 +31,7 @@ const firebaseCredentials = () => {
 };
 const paid = {
   type:'payment_matched', matchedAccount:true, duplicate:false,
-  amount:180, messageId:'123456789',
+  amount:180, messageId:'123456789', receivedAt:Date.now(),
 };
 test('accept confirmed matched payment only; OCR, duplicates and mismatches never push', () => {
   assert.equal(isConfirmedPayment(paid), true);
@@ -59,7 +59,7 @@ test('registration requires configured secret, exact pairing and a valid token',
   assert.equal(kv.values.size,1);
   assert.equal((await registerDevice(request(pairing,'a'.repeat(120)),{})).status,503);
 });
-test('sends only amount and eventId through signed Firebase OAuth and FCM HTTP v1',async () => {
+test('sends only amount, eventId and source time through Firebase OAuth and FCM HTTP v1',async () => {
   const kv = memoryKv();
   const env = {DEVICES:kv, DEVICE_PAIRING_SECRET:pairing,FIREBASE_SERVICE_ACCOUNT_JSON:firebaseCredentials()};
   const token = 'fcm_registration_token_'.repeat(5);
@@ -78,14 +78,14 @@ test('sends only amount and eventId through signed Firebase OAuth and FCM HTTP v
     }
     if (url === 'https://fcm.googleapis.com/v1/projects/speaker-project/messages:send') {
       const parsed = JSON.parse(options.body);
-      assert.deepEqual(parsed.message.data,{type:'payment_matched',amount:'180.00',eventId:'123456789'});
+      assert.deepEqual(parsed.message.data,{type:'payment_matched',amount:'180.00',eventId:'123456789',eventTime:String(paid.receivedAt)});
       assert.equal(parsed.message.token,token);
       assert.equal(options.headers.Authorization,'Bearer oauth-valid-very-long-test-token');
       return Response.json({name:'projects/speaker-project/messages/1'});
     }
     throw Error('unexpected URL '+url);
   };
-  const sent=await sendPaymentToDevices(paid,env,mocked,1800000000);
+  const sent=await sendPaymentToDevices(paid,env,mocked);
   assert.equal(sent.sent,1);
   assert.equal(calls.length,2);
   const before=calls.length;
@@ -115,7 +115,7 @@ test('Firebase project 404 must not erase a valid device token',async()=>{
   const mock=async url => url==='https://oauth2.googleapis.com/token'
     ? Response.json({access_token:'oauth-valid-very-long-test-token',expires_in:3600})
     : Response.json({error:{status:'NOT_FOUND',message:'Project does not exist'}},{status:404});
-  await assert.rejects(sendPaymentToDevices(paid,env,mock,1800000000),/fcm_send_404/);
+  await assert.rejects(sendPaymentToDevices(paid,env,mock),/fcm_send_404/);
   assert.equal(kv.values.size,1,'device token must not be deleted for project failure');
 });
 
@@ -137,7 +137,31 @@ test('FCM explicit UNREGISTERED token is pruned without treating project errors 
     : Response.json({error:{status:'NOT_FOUND',details:[
       {'@type':'type.googleapis.com/google.firebase.fcm.v1.FcmError',errorCode:'UNREGISTERED'},
     ]}},{status:404});
-  const result=await sendPaymentToDevices(paid,env,mock,1800000000);
+  const result=await sendPaymentToDevices(paid,env,mock);
   assert.equal(result.sent,0);
   assert.equal(kv.values.size,0);
+});
+
+test('rejects FCM delivery without original timestamp, and never sends stale money', async()=>{
+  const now=1_800_000_000_000;
+  assert.equal(isFreshPaymentEventTime(now-600_000,now),true);
+  assert.equal(isFreshPaymentEventTime(now-600_001,now),false);
+  assert.equal(isFreshPaymentEventTime(now+60_000,now),true);
+  assert.equal(isFreshPaymentEventTime(now+60_001,now),false);
+  assert.equal(isFreshPaymentEventTime(undefined,now),false);
+  assert.equal(isFreshPaymentEventTime('1800000000000',now),false);
+  const kv=memoryKv();
+  const env={DEVICES:kv,DEVICE_PAIRING_SECRET:pairing,FIREBASE_SERVICE_ACCOUNT_JSON:'configured'};
+  let count=0;
+  const never=async()=>{count++;throw Error('no request allowed')};
+  for(const result of [
+    {...paid,receivedAt:undefined},
+    {...paid,receivedAt:now-600_001},
+    {...paid,receivedAt:now+60_001},
+  ]) {
+    const out=await sendPaymentToDevices(result,env,never,now/1000);
+    assert.equal(out.sent,0);
+    assert.equal(out.expired,true);
+  }
+  assert.equal(count,0,'outdated or untimestamped slips cannot call Firebase OAuth or FCM');
 });
