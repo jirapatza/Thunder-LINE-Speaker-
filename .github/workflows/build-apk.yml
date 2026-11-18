@@ -53,6 +53,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: thunder-line-speaker-debug-apk
+          name: ci-debug-only-not-for-install
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
