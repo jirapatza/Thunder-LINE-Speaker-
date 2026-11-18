@@ -2,95 +2,78 @@ package com.thunder.linespeaker
 
 import android.app.Notification
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.speech.tts.TextToSpeech
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.util.Locale
 
-class LineNotificationService : NotificationListenerService(), TextToSpeech.OnInitListener {
-    private var tts: TextToSpeech? = null
-    private var ready = false
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private var lastKey = ""
-    private var lastTime = 0L
-
-    override fun onCreate() {
-        super.onCreate()
-        tts = TextToSpeech(this, this)
-    }
-
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale("th", "TH"))
-            ready = result != null && result != TextToSpeech.LANG_MISSING_DATA &&
-                result != TextToSpeech.LANG_NOT_SUPPORTED
-        }
-    }
-
+class LineNotificationService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Standard LINE package. Some cloned or work-profile installs use different IDs.
         if (sbn.packageName != "jp.naver.line.android") return
-        val extras = sbn.notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val body = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
-            ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        val combined = "$title $body"
+        val notification = sbn.notification
+        if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        val extras = notification.extras
+        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+            ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
+        if (sender.isBlank() && body.isBlank()) return
 
-        // Text messages must explicitly mention Thunder.
-        if (combined.contains("Thunder", ignoreCase = true)) {
-            val amount = parseAmount(combined)
+        val combined = "$sender $body"
+        val thunderMessage = sender.contains("Thunder", ignoreCase = true) ||
+            combined.contains("Thunder", ignoreCase = true) && AmountParser.findAmount(body) != null
+
+        if (thunderMessage) {
+            if (!Preferences.payments(this)) return
+            val amount = AmountParser.findAmount(body)
             if (amount != null) {
-                speakAmount(amount, "text:${sbn.key}:${amount}")
-                return
+                SpeechEngine.speak(this, "รับเงินเข้า $amount บาทแล้วเด้อ", "thunder:$sender:$body")
+            } else {
+                scanNotificationPicture(notification, "thunder:${sbn.key}")
             }
+            return
         }
 
-        // Android may provide a picture in a BigPicture notification.
-        // Most LINE image notifications do NOT include the actual slip bitmap.
+        // Customer voice: do not read actual lottery numbers or private chat contents aloud.
+        if (Preferences.customers(this) && body.isNotBlank()) {
+            val safeName = sender.take(40).ifBlank { "ลูกค้า" }
+            val lotName = listOf(
+                "ฮานอย VIP", "ฮานอยพิเศษ", "ฮานอยสามัคคี",
+                "ฮานอย", "ลาวพัฒนา", "ลาวประชาชน", "ลาวอาเซียน",
+                "รัฐบาล", "หุ้น"
+            ).firstOrNull { body.contains(it, ignoreCase = true) }
+            val phrase = if ((body.contains("หวย") || body.contains("สั่ง")) && lotName != null) {
+                "$safeName ซื้อหวย$lotName"
+            } else {
+                "$safeName ทัก LINE มา"
+            }
+            SpeechEngine.speak(this, phrase, "customer:$sender:$body", 30_000L)
+        }
+        // For actual image text, fall back to an available picture payload (if any).
+        if (Preferences.payments(this) && Preferences.screenOcr(this)) {
+            scanNotificationPicture(notification, "picture:${sbn.key}")
+        }
+    }
+
+    private fun scanNotificationPicture(notification: Notification, key: String) {
+        val extras = notification.extras
         @Suppress("DEPRECATION")
-        val picture: Bitmap? = if (Build.VERSION.SDK_INT >= 33) {
+        val bitmap: Bitmap? = if (Build.VERSION.SDK_INT >= 33) {
             extras.getParcelable(Notification.EXTRA_PICTURE, Bitmap::class.java)
         } else {
             extras.getParcelable(Notification.EXTRA_PICTURE)
         }
-        if (picture != null) {
-            recognizer.process(InputImage.fromBitmap(picture, 0))
-                .addOnSuccessListener { result ->
-                    // Only speak when an explicit monetary label/currency is recognized.
-                    val amount = parseAmount(result.text)
-                    if (amount != null) speakAmount(amount, "image:${sbn.key}:${amount}")
-                }
+        val drawable = if (Build.VERSION.SDK_INT >= 33) {
+            extras.getParcelable(Notification.EXTRA_PICTURE_ICON, android.graphics.drawable.Icon::class.java)
+                ?.loadDrawable(this)
+        } else null
+        val image = bitmap ?: (drawable as? BitmapDrawable)?.bitmap ?: return
+        ImageReader.fromBitmap(image) { amount ->
+            if (amount != null && Preferences.payments(this)) {
+                // OCR reads a picture, not bank confirmation. Never claim verification from image alone.
+                SpeechEngine.speak(this, "พบยอดเงิน $amount บาทจากรูปภาพ", "$key:$amount")
+            }
         }
-    }
-
-    private fun parseAmount(text: String): String? {
-        val pattern = Regex(
-            "(?:ยอด(?:เงิน)?|จำนวนเงิน|รับเงิน|โอนเงิน|amount|total|THB|฿)\\s*[:：]?\\s*(?:฿|THB)?\\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?|[0-9]{1,8}(?:\\.[0-9]{1,2})?)",
-            RegexOption.IGNORE_CASE
-        )
-        val amount = pattern.find(text)?.groupValues?.get(1) ?: return null
-        val value = amount.replace(",", "").toDoubleOrNull() ?: return null
-        if (value <= 0.0 || value > 100000000.0) return null
-        return amount
-    }
-
-    @Synchronized
-    private fun speakAmount(amount: String, key: String) {
-        if (!ready) return
-        val now = System.currentTimeMillis()
-        if (lastKey == key && now - lastTime < 120000) return
-        lastKey = key
-        lastTime = now
-        tts?.speak("รับเงินเข้า $amount บาทแล้วเด้อ", TextToSpeech.QUEUE_ADD, null, "payment-$now")
-    }
-
-    override fun onDestroy() {
-        recognizer.close()
-        tts?.stop()
-        tts?.shutdown()
-        super.onDestroy()
     }
 }
