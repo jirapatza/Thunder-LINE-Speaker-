@@ -5,6 +5,8 @@
  */
 const scope = 'https://www.googleapis.com/auth/firebase.messaging';
 const maxDevices = 5;
+const maxPaymentAgeMs = 10 * 60 * 1000;
+const maxFutureSkewMs = 60 * 1000;
 const encoded = new TextEncoder();
 let cachedAccess = null;
 
@@ -78,6 +80,11 @@ export function isConfirmedPayment(result) {
     result.amount <= 100_000_000 &&
     /^[0-9]{1,32}$/.test(result?.messageId || '');
 }
+export function isFreshPaymentEventTime(receivedAt, nowMs = Date.now()) {
+  return Number.isSafeInteger(receivedAt) &&
+    receivedAt >= nowMs - maxPaymentAgeMs &&
+    receivedAt <= nowMs + maxFutureSkewMs;
+}
 export function pushConfigured(env) {
   return Boolean(env.DEVICES?.list && env.DEVICE_PAIRING_SECRET && env.FIREBASE_SERVICE_ACCOUNT_JSON);
 }
@@ -126,6 +133,11 @@ async function pushOne(accessToken, projectId, token, message, fetchFn) {
 }
 export async function sendPaymentToDevices(result, env, fetchFn = fetch, at = Math.floor(Date.now() / 1000)) {
   if (!isConfirmedPayment(result)) return {sent:0, ignored:true};
+  // FCM TTL limits storage, but not delayed callback processing on Android.
+  // Carry the original LINE event time so the handset can reject stale alerts.
+  if (!isFreshPaymentEventTime(result.receivedAt, at * 1000)) {
+    return {sent:0, ignored:true, expired:true};
+  }
   if (!pushConfigured(env)) throw new Error('push_not_configured');
   const listing = await env.DEVICES.list({prefix:'device:', limit:100});
   if (!listing.keys?.length) return {sent:0, noDevices:true};
@@ -134,6 +146,7 @@ export async function sendPaymentToDevices(result, env, fetchFn = fetch, at = Ma
     type:'payment_matched',
     amount: result.amount.toFixed(2),
     eventId: result.messageId,
+    eventTime: String(result.receivedAt),
   };
   let sent = 0;
   for (const key of listing.keys) {
