@@ -54,10 +54,9 @@ export async function enqueueImageEvents(payload, env) {
   // Do not silently discard events beyond an arbitrary 50-item limit.
   const unique = new Map();
   for (const e of events) {
-    // LINE's signed timestamp is authoritative where present. Old redeliveries
-    // must not be announced as a new incoming payment.
-    if (isImageMessage(e) &&
-        (e.timestamp === undefined || isFreshPaymentTime(e.timestamp)) &&
+    // LINE event timestamps are milliseconds from the source. Fail closed
+    // if absent instead of fabricating a fresh arrival time for old slips.
+    if (isImageMessage(e) && isFreshPaymentTime(e.timestamp) &&
         !unique.has(e.message.id)) unique.set(e.message.id, e);
   }
   if (!unique.size) return 0;
@@ -67,7 +66,7 @@ export async function enqueueImageEvents(payload, env) {
     const batch = images.slice(start, start + 100).map(e => ({body: {
       messageId: e.message.id,
       eventId: String(e.webhookEventId || e.message.id).slice(0, 100),
-      receivedAt: Number.isFinite(e.timestamp) ? e.timestamp : Date.now(),
+      receivedAt: e.timestamp,
     }}));
     await env.SLIP_QUEUE.sendBatch(batch);
   }
@@ -154,7 +153,7 @@ export async function deliverPendingResults(env, pageLimit = 100, maxPages = 5) 
       scanned++;
       // A phone paired days later must never announce old transfers as new.
       // Legacy cache items without a timestamp are treated as expired.
-      if (!isFreshPaymentTime(state.verifiedAt)) {
+      if (!isFreshPaymentTime(state.receivedAt)) {
         await env.RESULT_CACHE.put(item.name,
           JSON.stringify({...state, delivered:true, expired:true}),
           {expirationTtl:3 * 86400});
@@ -241,20 +240,28 @@ export default {
           continue;
         }
         const key = 'verification:' + messageId;
-        if (job.body?.receivedAt !== undefined && !isFreshPaymentTime(job.body.receivedAt)) {
+        if (!isFreshPaymentTime(job.body?.receivedAt)) {
+          // Old queue envelopes lacked a source timestamp. Do not verify or
+          // announce them: their images may belong to arbitrarily old transfers.
+          const cached = await env.RESULT_CACHE.get(key, 'json');
+          if (cached && !cached.delivered) {
+            await env.RESULT_CACHE.put(key,
+              JSON.stringify({...cached, delivered:true, expired:true}),
+              {expirationTtl:3 * 86400});
+          }
           job.ack();
           continue;
         }
         let state = await env.RESULT_CACHE.get(key, 'json');
         if (!state) {
           const result = await verifySlipImage(messageId, env);
-          state = {result, delivered:false, verifiedAt:Date.now()};
+          state = {result, delivered:false, receivedAt:job.body.receivedAt, verifiedAt:Date.now()};
           // Cache the result BEFORE delivery, so a retry cannot re-verify the
           // same slip (and incorrectly classify the second attempt as duplicate).
           await env.RESULT_CACHE.put(key, JSON.stringify(state), {expirationTtl: 3 * 86400});
         }
         if (!state.delivered) {
-          if (!isFreshPaymentTime(state.verifiedAt)) {
+          if (!isFreshPaymentTime(state.receivedAt)) {
             await env.RESULT_CACHE.put(key, JSON.stringify({...state, delivered:true,expired:true}),
               {expirationTtl:3 * 86400});
             job.ack();
