@@ -9,7 +9,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import java.math.BigDecimal
 import java.math.RoundingMode
 
 /** Speaks only trusted, bank-verified payment events from the configured Firebase project. */
@@ -22,11 +21,12 @@ class VerifiedPaymentMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
         val data = message.data
-        if (data["type"] != "payment_matched" || !Preferences.payments(this)) return
+        if (!Preferences.payments(this)) return
         val eventId = data["eventId"] ?: return
-        if (!Regex("^[0-9]{1,32}$").matches(eventId)) return
-        val amount = data["amount"]?.toBigDecimalOrNull() ?: return
-        if (amount <= BigDecimal.ZERO || amount > BigDecimal("100000000")) return
+        val amount = PaymentAnnouncementPolicy.confirmedAmount(
+            PaymentAnnouncementPolicy.Source.VERIFIED_FCM,
+            data["type"], eventId, data["amount"]
+        ) ?: return
 
         // Remember the last 100 verified IDs across process restarts.
         val prefs = getSharedPreferences("verified_push_events", Context.MODE_PRIVATE)
