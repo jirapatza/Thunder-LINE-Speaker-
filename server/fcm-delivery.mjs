@@ -115,12 +115,13 @@ async function pushOne(accessToken, projectId, token, message, fetchFn) {
     }),
   });
   if (response.ok) return 'sent';
-  if (response.status === 404) return 'unregistered';
-  if (response.status === 400) {
-    let error = {};
-    try { error = await response.json(); } catch {}
-    if (JSON.stringify(error).includes('UNREGISTERED')) return 'unregistered';
-  }
+  // An HTTP 404 can also mean the Firebase PROJECT does not exist.
+  // Only erase a device token for an explicit UNREGISTERED token error.
+  let error;
+  try { error = await response.json(); } catch { /* Keep the token. */ }
+  const details = Array.isArray(error?.error?.details) ? error.error.details : [];
+  if (details.some(d => d['@type'] === 'type.googleapis.com/google.firebase.fcm.v1.FcmError' &&
+      d.errorCode === 'UNREGISTERED')) return 'unregistered';
   throw new Error(`fcm_send_${response.status}`);
 }
 export async function sendPaymentToDevices(result, env, fetchFn = fetch, at = Math.floor(Date.now() / 1000)) {
