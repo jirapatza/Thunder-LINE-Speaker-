@@ -1,12 +1,16 @@
 package com.thunder.linespeaker
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -47,6 +51,27 @@ class MainActivity : Activity() {
         addSwitch("พูดเมื่อลูกค้าทัก LINE", Preferences.customers(this)) { Preferences.setCustomers(this, it) }
         addSwitch("พูดยอดเงินจาก Thunder", Preferences.payments(this)) { Preferences.setPayments(this, it) }
         addSwitch("OCR ภาพที่เปิดอยู่ใน LINE", Preferences.screenOcr(this)) { Preferences.setScreenOcr(this, it) }
+        val pairingField = EditText(this).apply {
+            hint = "รหัสจับคู่ส่วนตัว (เมื่อเซิร์ฟเวอร์พร้อม)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        layout.addView(pairingField)
+        addButton("จับคู่มือถือเพื่อรับผลตรวจสลิป LINE OA อัตโนมัติ") {
+            val code = pairingField.text?.toString()?.trim().orEmpty()
+            info.text = "กำลังตรวจสอบการจับคู่..."
+            PushPairing.pair(this, code) { _, message ->
+                runOnUiThread { info.text = message }
+            }
+        }
+        addButton("อนุญาตแจ้งเตือนผลตรวจสลิป") {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
+            } else {
+                info.text = "เปิดสิทธิ์แจ้งเตือนแล้ว"
+            }
+        }
         addButton("อนุญาตอ่านการแจ้งเตือน") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
@@ -63,7 +88,11 @@ class MainActivity : Activity() {
             SpeechEngine.speak(this, "รับเงินเข้า 180 บาทแล้วเด้อ", "test:${System.currentTimeMillis()}", 0)
         }
         info = TextView(this).apply {
-            text = "รูปภาพอัตโนมัติ: อ่านได้เมื่อ LINE แนบรูปกับแจ้งเตือน หรือเปิดรูปบนหน้าจอ LINE และเปิดสิทธิ์ช่วยการเข้าถึง ไม่สามารถดึงรูปทุกห้องแชตได้เมื่อปิด LINE"
+            text = if (FirebaseBootstrap.isConfigured(this@MainActivity)) {
+                "Firebase พร้อมให้จับคู่ (ต้องมีรหัสจับคู่ของเซิร์ฟเวอร์)"
+            } else {
+                "ยังไม่มีค่า Firebase จริง: โหมดรับผลตรวจจากเซิร์ฟเวอร์ยังไม่ทำงาน รุ่นนี้ยังเป็นโค้ดสำหรับทดสอบ ไม่ต้องติดตั้งซ้ำ"
+            }
             textSize = 15f
             setPadding(0, 24, 0, 0)
         }
