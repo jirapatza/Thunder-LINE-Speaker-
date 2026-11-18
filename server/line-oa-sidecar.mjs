@@ -109,6 +109,7 @@ export async function dispatchResult(result, env, fetchFn = fetch) {
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (request.method === 'GET' && path === '/') return new Response('LINE OA Slip Speaker พร้อมทำงาน (รอกำหนดค่าระบบเชื่อมต่อ)', {headers:{'content-type':'text/plain; charset=utf-8'}});
     if (request.method === 'GET' && path === '/health') {
       let pairedDevices = 0;
       if (env.DEVICES?.list) {
