@@ -6,9 +6,9 @@
 
 ส่วนที่ทำเสร็จและตรวจสอบได้:
 
-- Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว; Android Build ผ่าน GitHub Actions ใน PR #3
+- Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5 และ #6 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการและสถานะ readiness; GitHub Actions ฝั่ง Server/Android ผ่าน
+- GitHub: PR #1, #2, #3, #5, #6 และ #7 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
 - Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
@@ -87,3 +87,13 @@ node --test server/*.test.mjs
 - https://developers.cloudflare.com/queues/
 
 **ข้อจำกัด Coda:** ตัวเชื่อมต่อ Coda ส่งข้อผิดพลาดภายใน ณ วันที่ตรวจ จึงเก็บสถานะนี้ใน GitHub แทน ไม่ได้อ้างว่าบันทึกเข้า Coda แล้ว
+
+
+## ตรวจสอบล่าสุด — 18 พฤศจิกายน 2569 (PR #7)
+
+- GitHub PR #7 merged (commit `23046ad6b62d58426ae444c540d9d7e48d435a49`), Android Build/Unit tests สำเร็จ
+- ตัวแอปมีปุ่มตรวจสถานะ Cloudflare/LINE/Thunder/Firebase โดยไม่แสดงคีย์ และมีการต่ออายุการจับคู่อุปกรณ์หลังเปิดแอปเพื่อลดปัญหาหมดอายุ KV ที่ 90 วัน
+- ค้นหาไฟล์/โค้ด Webhook เดิมใน GitHub ที่เชื่อมอยู่ ไม่พบ endpoint; Gmail/Drive ที่เข้าถึงได้ไม่พบข้อมูลโปรเจกต์สำหรับเติม Credentials
+- Cloudflare Worker ยังไม่มี `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `THUNDER_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `DEVICE_PAIRING_SECRET` จึงยังไม่สามารถรับภาพและส่งเสียงจริง
+- ต้องใช้สิทธิ์เจ้าของ LINE OA/Thunder/Firebase ในการตั้งค่าคีย์จริงและต้องทดสอบบน vivo V30 Pro ก่อนประกาศส่งมอบ
+- ไม่สร้างคีย์ปลอม ไม่ฝังคีย์ส่วนตัวใน GitHub ไม่เปลี่ยน Webhook เดิม และยังไม่ออก APK ที่อ้างว่าพร้อมใช้งาน
