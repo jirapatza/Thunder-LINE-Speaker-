@@ -8,7 +8,7 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9, #10 และ #11 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
+- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9, #10, #11 และ #12 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
 - Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
@@ -134,3 +134,14 @@ node --test server/*.test.mjs
 - ทดสอบเมื่อยังไม่มีมือถือจับคู่: ผลตรวจที่ผ่านเก็บรอไว้ แล้วเมื่อมือถือจับคู่จึงส่ง FCM จากข้อมูลแคช **โดยไม่เรียก Thunder ตรวจซ้ำ**
 - **เป็นการทดสอบจำลอง ไม่ใช่การยืนยันว่าธนาคารได้รับเงินหรือเสียงดังจริงบน vivo V30 Pro**; ต้องเติมคีย์ LINE/Thunder/Firebase และต่อเหตุการณ์จากเจ้าของ Webhook เดิมก่อนทดสอบอุปกรณ์
 - ไม่มีการเปลี่ยน URL Webhook เดิม ไม่มีการติดตั้ง APK และไม่มีการอัปโหลด Worker โค้ดใหม่ เพราะ PR นี้เพิ่มเฉพาะชุดทดสอบ
+
+## ป้องกันอ่านยอดเงินผิดจากชื่อผู้ส่ง LINE (PR #12 · 19 พ.ย. 2569)
+
+- PR #12 รวมเข้า `main` (commit `10f8cdb54b79fb7bde6b795dfb97b8fe96212632`); Android Unit Tests และ Build ผ่าน
+- ปิดช่องโหว่ที่ LINE NotificationListener ยอมให้แชตที่ตั้งชื่อผู้ส่งว่า `Thunder` และมีตัวเลขในข้อความเรียกเสียง `รับเงินเข้า ... บาทแล้วเด้อ` โดยไม่ผ่าน Thunder API
+- คำประกาศ `รับเงินเข้า ... บาทแล้วเด้อ` จะมาจากเส้นทาง **Firebase verified-payment event** เท่านั้น และยังต้องใช้ค่า Firebase จริงของโปรเจกต์ที่กำหนด
+- อ่านตัวเลขจาก OCR ยังระบุว่าเป็นเพียง `พบยอดเงิน ... จากรูปภาพ` ไม่ใช่หลักฐานการโอนเงิน
+- เพิ่ม `PaymentAnnouncementPolicy` และ JUnit regression tests สำหรับข้อความ LINE/OCR ที่ปลอมแปลงเป็นยอดรับเงินจริง, ฟิลด์เหตุการณ์ที่ผิด และจำนวนเงินไม่สมเหตุสมผล
+- เพิ่ม Android manifest `queries` สำหรับ TTS_SERVICE เพื่อให้ Android รุ่นใหม่เข้าถึงบริการอ่านออกเสียงที่ติดตั้งได้ตามข้อกำหนดการมองเห็นแพ็กเกจ
+- แก้ข้อความหน้าแอปที่เคยอ้างว่าทุกอย่างทำบนเครื่อง ให้แสดงตามจริงว่าการตรวจสลิปอัตโนมัติต้องใช้ Cloudflare/Thunder/Firebase
+- **ยังไม่เปิดใช้กับการโอนเงินจริง**: Cloudflare Worker ยังไม่มี LINE/Thunder/Firebase Secrets และยังไม่พบสิทธิ์แก้ handler Webhook เดิม; ไม่มีการเปลี่ยน webhook, ไม่ต้องติดตั้ง APK รอบใหม่, ต้องทดสอบกับ vivo V30 Pro ก่อนส่งมอบ
