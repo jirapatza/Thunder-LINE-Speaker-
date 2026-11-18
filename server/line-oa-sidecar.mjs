@@ -7,6 +7,7 @@ import { registerDevice, sendPaymentToDevices, pushConfigured } from './fcm-deli
 
 const IMAGE_LIMIT = 4_194_304;
 const WEBHOOK_LIMIT = 512_000;
+const MAX_NOTIFICATION_AGE_MS = 10 * 60 * 1000;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const encoder = new TextEncoder();
 
@@ -42,6 +43,10 @@ function isImageMessage(e) {
   return e?.type === 'message' && e.message?.type === 'image' &&
     typeof e.message.id === 'string' && /^[0-9]{1,32}$/.test(e.message.id);
 }
+export function isFreshPaymentTime(timestamp, now = Date.now()) {
+  return Number.isFinite(timestamp) && timestamp <= now + 60_000 && timestamp >= now - MAX_NOTIFICATION_AGE_MS;
+}
+
 export async function enqueueImageEvents(payload, env) {
   const events = Array.isArray(payload?.events) ? payload.events : [];
   // LINE may redeliver the same event. Avoid duplicated queue items within
@@ -49,7 +54,11 @@ export async function enqueueImageEvents(payload, env) {
   // Do not silently discard events beyond an arbitrary 50-item limit.
   const unique = new Map();
   for (const e of events) {
-    if (isImageMessage(e) && !unique.has(e.message.id)) unique.set(e.message.id, e);
+    // LINE's signed timestamp is authoritative where present. Old redeliveries
+    // must not be announced as a new incoming payment.
+    if (isImageMessage(e) &&
+        (e.timestamp === undefined || isFreshPaymentTime(e.timestamp)) &&
+        !unique.has(e.message.id)) unique.set(e.message.id, e);
   }
   if (!unique.size) return 0;
   if (!env.SLIP_QUEUE?.sendBatch) throw new Error('queue_not_configured');
@@ -58,6 +67,7 @@ export async function enqueueImageEvents(payload, env) {
     const batch = images.slice(start, start + 100).map(e => ({body: {
       messageId: e.message.id,
       eventId: String(e.webhookEventId || e.message.id).slice(0, 100),
+      receivedAt: Number.isFinite(e.timestamp) ? e.timestamp : Date.now(),
     }}));
     await env.SLIP_QUEUE.sendBatch(batch);
   }
@@ -142,6 +152,14 @@ export async function deliverPendingResults(env, pageLimit = 100, maxPages = 5) 
       const state = await env.RESULT_CACHE.get(item.name, 'json');
       if (!state || state.delivered || !state.result) continue;
       scanned++;
+      // A phone paired days later must never announce old transfers as new.
+      // Legacy cache items without a timestamp are treated as expired.
+      if (!isFreshPaymentTime(state.verifiedAt)) {
+        await env.RESULT_CACHE.put(item.name,
+          JSON.stringify({...state, delivered:true, expired:true}),
+          {expirationTtl:3 * 86400});
+        continue;
+      }
       const outcome = await sendPaymentToDevices(state.result, env);
       if (outcome.noDevices) return {scanned, delivered};
       if (outcome.ignored || outcome.sent > 0) {
@@ -223,15 +241,25 @@ export default {
           continue;
         }
         const key = 'verification:' + messageId;
+        if (!isFreshPaymentTime(job.body?.receivedAt)) {
+          job.ack();
+          continue;
+        }
         let state = await env.RESULT_CACHE.get(key, 'json');
         if (!state) {
           const result = await verifySlipImage(messageId, env);
-          state = {result, delivered:false};
+          state = {result, delivered:false, verifiedAt:Date.now()};
           // Cache the result BEFORE delivery, so a retry cannot re-verify the
           // same slip (and incorrectly classify the second attempt as duplicate).
           await env.RESULT_CACHE.put(key, JSON.stringify(state), {expirationTtl: 3 * 86400});
         }
         if (!state.delivered) {
+          if (!isFreshPaymentTime(state.verifiedAt)) {
+            await env.RESULT_CACHE.put(key, JSON.stringify({...state, delivered:true,expired:true}),
+              {expirationTtl:3 * 86400});
+            job.ack();
+            continue;
+          }
           const outcome = await sendPaymentToDevices(state.result, env);
           // No paired devices or a token rejected by FCM: persist as pending.
           // Never mark a verified payment delivered without an accepted send.
