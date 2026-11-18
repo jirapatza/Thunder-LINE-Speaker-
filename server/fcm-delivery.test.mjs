@@ -97,3 +97,47 @@ test('no paired devices avoids token exchange or network calls',async()=>{
   const out=await sendPaymentToDevices(paid,env,async()=>{throw Error('unexpected network')});
   assert.equal(out.noDevices,true);
 });
+
+test('Firebase project 404 must not erase a valid device token',async()=>{
+  const kv=memoryKv();
+  const creds=JSON.parse(firebaseCredentials());
+  creds.project_id='speaker-project-404';
+  const env={
+    DEVICES:kv,DEVICE_PAIRING_SECRET:pairing,
+    FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify(creds),
+  };
+  const token='fcm_project404_'.repeat(6);
+  const registration=await registerDevice(new Request('https://test.invalid/register-device',{
+    method:'POST',headers:{'x-pairing-code':pairing},
+    body:JSON.stringify({token}),
+  }),env);
+  assert.equal(registration.status,200);
+  const mock=async url => url==='https://oauth2.googleapis.com/token'
+    ? Response.json({access_token:'oauth-valid-very-long-test-token',expires_in:3600})
+    : Response.json({error:{status:'NOT_FOUND',message:'Project does not exist'}},{status:404});
+  await assert.rejects(sendPaymentToDevices(paid,env,mock,1800000000),/fcm_send_404/);
+  assert.equal(kv.values.size,1,'device token must not be deleted for project failure');
+});
+
+test('FCM explicit UNREGISTERED token is pruned without treating project errors as invalid',async()=>{
+  const kv=memoryKv();
+  const creds=JSON.parse(firebaseCredentials());
+  creds.project_id='speaker-project-unregistered';
+  const env={
+    DEVICES:kv,DEVICE_PAIRING_SECRET:pairing,
+    FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify(creds),
+  };
+  const token='fcm_unregistered_'.repeat(6);
+  await registerDevice(new Request('https://test.invalid/register-device',{
+    method:'POST',headers:{'x-pairing-code':pairing},
+    body:JSON.stringify({token}),
+  }),env);
+  const mock=async url => url==='https://oauth2.googleapis.com/token'
+    ? Response.json({access_token:'oauth-valid-very-long-test-token',expires_in:3600})
+    : Response.json({error:{status:'NOT_FOUND',details:[
+      {'@type':'type.googleapis.com/google.firebase.fcm.v1.FcmError',errorCode:'UNREGISTERED'},
+    ]}},{status:404});
+  const result=await sendPaymentToDevices(paid,env,mock,1800000000);
+  assert.equal(result.sent,0);
+  assert.equal(kv.values.size,0);
+});
