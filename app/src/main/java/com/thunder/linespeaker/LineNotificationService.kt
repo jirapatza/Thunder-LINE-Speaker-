@@ -23,11 +23,11 @@ class LineNotificationService : NotificationListenerService() {
         val thunderMessage = sender.contains("Thunder", ignoreCase = true)
 
         if (thunderMessage) {
-            if (!Preferences.payments(this)) return
-            val amount = AmountParser.findAmount(body)
-            if (amount != null) {
-                SpeechEngine.speak(this, "รับเงินเข้า $amount บาทแล้วเด้อ", "thunder:$sender:$body")
-            } else {
+            // LINE contact names are arbitrary, including "Thunder". A
+            // display name and an amount in text cannot certify a transfer.
+            // Only the authenticated verified FCM event may announce receipt.
+            // Keep optional OCR as clearly unverified picture reading.
+            if (Preferences.payments(this) && Preferences.screenOcr(this)) {
                 scanNotificationPicture(notification, "thunder:${sbn.key}")
             }
             return
