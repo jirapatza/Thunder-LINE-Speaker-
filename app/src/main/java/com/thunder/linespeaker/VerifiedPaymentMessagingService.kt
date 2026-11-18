@@ -25,7 +25,7 @@ class VerifiedPaymentMessagingService : FirebaseMessagingService() {
         val eventId = data["eventId"] ?: return
         val amount = PaymentAnnouncementPolicy.confirmedAmount(
             PaymentAnnouncementPolicy.Source.VERIFIED_FCM,
-            data["type"], eventId, data["amount"]
+            data["type"], eventId, data["amount"], data["eventTime"]
         ) ?: return
 
         // Remember the last 100 verified IDs across process restarts.

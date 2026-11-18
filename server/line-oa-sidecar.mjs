@@ -159,7 +159,7 @@ export async function deliverPendingResults(env, pageLimit = 100, maxPages = 5) 
           {expirationTtl:3 * 86400});
         continue;
       }
-      const outcome = await sendPaymentToDevices(state.result, env);
+      const outcome = await sendPaymentToDevices({...state.result, receivedAt: state.receivedAt}, env);
       if (outcome.noDevices) return {scanned, delivered};
       if (outcome.ignored || outcome.sent > 0) {
         if (env.EVENT_SINK_URL && env.EVENT_SINK_SECRET) {
@@ -267,7 +267,7 @@ export default {
             job.ack();
             continue;
           }
-          const outcome = await sendPaymentToDevices(state.result, env);
+          const outcome = await sendPaymentToDevices({...state.result, receivedAt: state.receivedAt}, env);
           // No paired devices or a token rejected by FCM: persist as pending.
           // Never mark a verified payment delivered without an accepted send.
           if (outcome.noDevices || (!outcome.ignored && outcome.sent === 0)) {

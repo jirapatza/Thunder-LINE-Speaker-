@@ -101,6 +101,8 @@ test('signed LINE forward -> Queue -> Thunder -> exactly one FCM send for same m
       assert.equal(payload.message.token,token);
       assert.equal(payload.message.data.type,'payment_matched');
       assert.equal(payload.message.data.amount,'182.00');
+      assert.ok(Math.abs(Date.now() - Number(payload.message.data.eventTime)) < 10 * 60_000,
+        'FCM must carry original LINE event time, not a fabricated delivery time');
       assert.ok(['111','555'].includes(payload.message.data.eventId),
         'only a confirmed matching slip may reach FCM');
       assert.equal(payload.message.android.priority,'HIGH');
