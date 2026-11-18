@@ -38,7 +38,7 @@ Use a separate receiving endpoint for the signed result, not the existing LINE w
 - [x] Inspected existing Cloudflare Worker line-oa-slip-speaker: **placeholder only**, no secrets/bindings.
 - [x] Inspected GitHub Thunder-LINE-Speaker- v0.4; built Android app, but no verified background image acquisition.
 - [x] Designed and unit-tested LINE webhook HMAC, image download, Thunder image upload, matchAccount/duplicate guard, signed result delivery.
-- [ ] Configure queue/Worker bindings and secrets in the owner's Cloudflare/LINE/Thunder accounts.
+- [x] Created dedicated Cloudflare Queue `line-oa-slip-verification` (18 Nov 2026; no consumer attached yet; no real events sent).\n- [ ] Connect queue producer/consumer to the Worker and add LINE/Thunder/receiver secrets. **Not configured; current Worker is still a placeholder.**
 - [ ] Verify that the existing LINE Official Account webhook actually receives customer images; current endpoint/source is not present in the accessible repos.
 - [ ] Arrange authorized forwarding from existing webhook **without changing its URL**.
 - [ ] Build and connect a secure Android notification receiver (FCM) with the actual device registration.
