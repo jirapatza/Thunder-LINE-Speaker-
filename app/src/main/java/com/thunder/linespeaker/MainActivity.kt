@@ -30,7 +30,7 @@ class MainActivity : Activity() {
             textSize = 26f
         })
         layout.addView(TextView(this).apply {
-            text = "ลูกค้าทัก LINE: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\nThunder ส่งยอดเป็นข้อความ: พูดยอดเงิน\nภาพสลิป: อ่านรูปที่เปิดหรือแชร์ได้เมื่อ Android เข้าถึงภาพ\n\nOCR ภายในเครื่องไม่ยืนยันการโอนเงินจริง\\nสลิป LINE OA ที่ตรวจจริงใช้ Cloudflare / Thunder / Firebase เมื่อเชื่อมต่อแล้ว"
+            text = "ลูกค้าทัก LINE: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\nเงินเข้า: พูดเฉพาะยอดที่ตรวจสลิปผ่าน Thunder และส่งผลผ่าน Firebase\nภาพสลิปที่แชร์มา: OCR อ่านตัวเลขจากภาพเท่านั้น ไม่ใช่หลักฐานยืนยันโอน\n\nการตรวจสลิปอัตโนมัติใช้ Cloudflare / Thunder / Firebase เมื่อเชื่อมต่อแล้ว"
             textSize = 16f
         })
         @Suppress("DEPRECATION")
