@@ -1,14 +1,16 @@
 name: Build Android APK
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -17,23 +19,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Verify preinstalled Android SDK
+      - name: Check Android SDK
         shell: bash
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          test -d "$ANDROID_HOME" || { echo "Android SDK not found on runner"; exit 1; }
+          test -d "$ANDROID_HOME" || { echo "Missing Android SDK"; exit 1; }
           ls "$ANDROID_HOME/platforms" || true
-          ls "$ANDROID_HOME/build-tools" || true
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" || true
+          fi
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK with diagnostics
+      - name: Unit tests and debug APK
         shell: bash
         run: |
           set -o pipefail
-          gradle --version
-          gradle :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee android-build.log
+          gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee android-build.log
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
