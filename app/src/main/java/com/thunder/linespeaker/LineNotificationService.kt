@@ -2,7 +2,6 @@ package com.thunder.linespeaker
 
 import android.app.Notification
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.service.notification.NotificationListenerService
@@ -21,8 +20,7 @@ class LineNotificationService : NotificationListenerService() {
         if (sender.isBlank() && body.isBlank()) return
 
         val combined = "$sender $body"
-        val thunderMessage = sender.contains("Thunder", ignoreCase = true) ||
-            combined.contains("Thunder", ignoreCase = true) && AmountParser.findAmount(body) != null
+        val thunderMessage = sender.contains("Thunder", ignoreCase = true)
 
         if (thunderMessage) {
             if (!Preferences.payments(this)) return
