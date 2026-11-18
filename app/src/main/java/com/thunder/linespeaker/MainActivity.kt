@@ -72,6 +72,12 @@ class MainActivity : Activity() {
                 info.text = "เปิดสิทธิ์แจ้งเตือนแล้ว"
             }
         }
+        addButton("ตรวจความพร้อม Cloudflare / LINE / Thunder / Firebase") {
+            info.text = "กำลังตรวจสอบสถานะระบบ..."
+            PushPairing.checkServerStatus { status ->
+                runOnUiThread { info.text = status }
+            }
+        }
         addButton("อนุญาตอ่านการแจ้งเตือน") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
@@ -99,6 +105,9 @@ class MainActivity : Activity() {
         layout.addView(info)
         setContentView(ScrollView(this).apply { addView(layout) })
         handleIncomingImage(intent)
+        // Renews FCM registration periodically even when the token itself did
+        // not rotate. Requires no new pairing or new app installation.
+        PushPairing.refreshWhenAppOpens(this)
     }
 
     override fun onNewIntent(intent: Intent) {
