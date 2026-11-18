@@ -1,0 +1,22 @@
+name: Test LINE OA sidecar
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/test-line-sidecar.yml']
+  pull_request:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/test-line-sidecar.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run signed webhook and Thunder mock tests
+        run: node --test server/line-oa-sidecar.test.mjs
