@@ -99,9 +99,10 @@ test('signed LINE forward -> Queue -> Thunder -> exactly one FCM send for same m
       assert.equal(options.headers.Authorization,'Bearer oauth-integration-token-valid');
       const payload=JSON.parse(options.body);
       assert.equal(payload.message.token,token);
-      assert.deepEqual(payload.message.data,{
-        type:'payment_matched',amount:'182.00',eventId:'111',
-      });
+      assert.equal(payload.message.data.type,'payment_matched');
+      assert.equal(payload.message.data.amount,'182.00');
+      assert.ok(['111','555'].includes(payload.message.data.eventId),
+        'only a confirmed matching slip may reach FCM');
       assert.equal(payload.message.android.priority,'HIGH');
       return Response.json({name:'projects/speaker-integration-test/messages/sent'});
     }
@@ -152,6 +153,27 @@ test('signed LINE forward -> Queue -> Thunder -> exactly one FCM send for same m
 
     assert.equal(calls.thunder,3);
     assert.equal(calls.fcm,1);
+
+    // The server verifies a new slip without any paired phones. Keep the
+    // confirmed result without re-verifying it when a phone pairs later.
+    devices.records.clear();
+    assert.equal((await forward('555')).status,202);
+    await consume();
+    assert.equal(calls.thunder,4);
+    assert.equal(calls.fcm,1);
+    assert.equal((await cache.get('verification:555','json')).delivered,false);
+
+    const background=[];
+    const enrolling=await worker.fetch(new Request('https://example.invalid/register-device',{
+      method:'POST', headers:{'x-pairing-code':env.DEVICE_PAIRING_SECRET},
+      body:JSON.stringify({token}),
+    }),env,{waitUntil(task){background.push(task);}});
+    assert.equal(enrolling.status,200);
+    assert.equal(background.length,1);
+    await Promise.all(background);
+    assert.equal(calls.thunder,4,'pairing must use cached verification');
+    assert.equal(calls.fcm,2,'pairing should deliver pending confirmed payment once');
+    assert.equal((await cache.get('verification:555','json')).delivered,true);
   } finally {
     globalThis.fetch=priorFetch;
   }
