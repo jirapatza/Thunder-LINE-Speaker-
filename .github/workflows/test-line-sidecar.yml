@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: '22'
       - name: Run signed webhook and Thunder mock tests
-        run: node --test server/line-oa-sidecar.test.mjs
+        run: node --test server/*.test.mjs

@@ -18,7 +18,9 @@ test('validates HMAC before accepting an event', async () => {
 test('accepts signed image events and rejects unknown or unsigned requests', async () => {
   const batch = [];
   const env = { LINE_CHANNEL_SECRET:'s', LINE_CHANNEL_ACCESS_TOKEN:'t',
-    THUNDER_API_KEY:'k', SLIP_QUEUE: {sendBatch: async items => batch.push(...items)} };
+    THUNDER_API_KEY:'k', SLIP_QUEUE: {sendBatch: async items => batch.push(...items)},
+    RESULT_CACHE:{get:async()=>null,put:async()=>{}},
+    DEVICES:{list:async()=>({keys:[]})}, DEVICE_PAIRING_SECRET:'x'.repeat(32), FIREBASE_SERVICE_ACCOUNT_JSON:'configured' };
   const url = 'https://example.invalid/line-webhook';
   const good = await worker.fetch(new Request(url, {method:'POST',body:event,headers:{'x-line-signature':signature('s',event)}}),env);
   assert.equal(good.status,202);
@@ -77,8 +79,33 @@ test('rejects invalid and oversized image formats',async () => {
 
 test('does not allow a LINE signature to authorize the separate forward endpoint',async () => {
   const env={FORWARD_SECRET:'r',LINE_CHANNEL_SECRET:'l',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
-    SLIP_QUEUE:{sendBatch:async()=>{}}};
+    SLIP_QUEUE:{sendBatch:async()=>{}},RESULT_CACHE:{get:async()=>null,put:async()=>{}},
+    DEVICES:{list:async()=>({keys:[]})},DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured'};
   const url='https://example.invalid/forwarded-webhook';
   assert.equal((await worker.fetch(new Request(url,{method:'POST',body:event,headers:{'x-line-signature':signature('l',event)}}),env)).status,401);
   assert.equal((await worker.fetch(new Request(url,{method:'POST',body:event,headers:{'x-relay-signature':signature('r',event)}}),env)).status,202);
+});
+
+test('queue resumes cached bank verification without charging Thunder again',async()=>{
+  const cached=new Map([['verification:123',{result:{
+    type:'payment_matched',matchedAccount:true,duplicate:false,amount:180,messageId:'123',
+  },delivered:false}]]);
+  let acks=0, retries=0;
+  const env={
+    LINE_CHANNEL_SECRET:'s',LINE_CHANNEL_ACCESS_TOKEN:'t',THUNDER_API_KEY:'k',
+    SLIP_QUEUE:{sendBatch:async()=>{}},
+    DEVICE_PAIRING_SECRET:'x'.repeat(32),FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+    DEVICES:{list:async()=>({keys:[]})},
+    RESULT_CACHE:{
+      get:async k=>cached.get(k)||null,
+      put:async (k,v)=>{cached.set(k,JSON.parse(v));},
+    },
+  };
+  await worker.queue({messages:[{
+    body:{messageId:'123'},
+    ack(){acks++}, retry(){retries++},
+  }]},env);
+  assert.equal(acks,1);
+  assert.equal(retries,0);
+  assert.equal(cached.get('verification:123').delivered,true);
 });

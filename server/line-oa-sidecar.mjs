@@ -3,6 +3,8 @@
  * Does not change an existing webhook URL or access private LINE chats.
  * An existing handler must intentionally forward signed events to this Worker.
  */
+import { registerDevice, sendPaymentToDevices, pushConfigured } from './fcm-delivery.mjs';
+
 const IMAGE_LIMIT = 4_194_304;
 const WEBHOOK_LIMIT = 512_000;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -33,7 +35,8 @@ export async function verifySignature(secret, body, supplied) {
   return constantTimeEquals(await hmacBase64(secret, body), supplied);
 }
 function requirements(env) {
-  return Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN && env.THUNDER_API_KEY && env.SLIP_QUEUE);
+  return Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN && env.THUNDER_API_KEY &&
+    env.SLIP_QUEUE?.sendBatch && env.RESULT_CACHE?.get && env.RESULT_CACHE?.put && pushConfigured(env));
 }
 function isImageMessage(e) {
   return e?.type === 'message' && e.message?.type === 'image' &&
@@ -107,8 +110,22 @@ export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/health') {
-      return json({ service: 'line-oa-slip-speaker',
-        status: requirements(env) && env.EVENT_SINK_URL && env.EVENT_SINK_SECRET ? 'configured' : 'needs_configuration' });
+      let pairedDevices = 0;
+      if (env.DEVICES?.list) {
+        try { pairedDevices = (await env.DEVICES.list({prefix:'device:',limit:20})).keys?.length || 0; }
+        catch { /* No secrets exposed by health. */ }
+      }
+      return json({
+        service: 'line-oa-slip-speaker',
+        status: requirements(env) && pairedDevices > 0 ? 'configured' : 'needs_configuration',
+        pairedDevices,
+        lineConfigured: Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN),
+        thunderConfigured: Boolean(env.THUNDER_API_KEY),
+        fcmConfigured: Boolean(env.FIREBASE_SERVICE_ACCOUNT_JSON),
+      });
+    }
+    if (request.method === 'POST' && path === '/register-device') {
+      return registerDevice(request, env);
     }
     if (request.method !== 'POST' || !['/line-webhook', '/forwarded-webhook'].includes(path)) return json({ error: 'not_found' }, 404);
     if (!requirements(env)) return json({ error: 'not_configured' }, 503);
@@ -132,11 +149,33 @@ export default {
   async queue(batch, env) {
     for (const job of batch.messages) {
       try {
-        const result = await verifySlipImage(job.body?.messageId, env);
-        await dispatchResult(result, env);
+        if (!requirements(env)) throw new Error('worker_not_configured');
+        const messageId = job.body?.messageId;
+        if (typeof messageId !== 'string' || !/^[0-9]{1,32}$/.test(messageId)) {
+          job.ack();
+          continue;
+        }
+        const key = 'verification:' + messageId;
+        let state = await env.RESULT_CACHE.get(key, 'json');
+        if (!state) {
+          const result = await verifySlipImage(messageId, env);
+          state = {result, delivered:false};
+          // Cache the result BEFORE delivery, so a retry cannot re-verify the
+          // same slip (and incorrectly classify the second attempt as duplicate).
+          await env.RESULT_CACHE.put(key, JSON.stringify(state), {expirationTtl: 3 * 86400});
+        }
+        if (!state.delivered) {
+          await sendPaymentToDevices(state.result, env);
+          if (env.EVENT_SINK_URL && env.EVENT_SINK_SECRET) {
+            await dispatchResult(state.result, env);
+          }
+          await env.RESULT_CACHE.put(key,
+            JSON.stringify({result:state.result,delivered:true}),
+            {expirationTtl: 3 * 86400});
+        }
         job.ack();
       } catch {
-        // Retries are handled by Cloudflare Queues, never log private image content.
+        // At-least-once queue delivery; Android deduplicates by messageId.
         job.retry();
       }
     }
