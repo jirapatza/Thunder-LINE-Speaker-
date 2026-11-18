@@ -1,6 +1,6 @@
 # Thunder LINE Speaker — LINE OA / Thunder / FCM
 
-## สถานะจริง ณ 18 พฤศจิกายน 2569
+## สถานะจริง ณ 19 พฤศจิกายน 2569
 
 **ระบบยังไม่ครบวงจรและยังไม่ควรติดตั้ง APK รอบใหม่**
 
@@ -8,8 +8,8 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9, #10, #11 และ #12 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
-- Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
+- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9, #10, #11, #12 และ #13 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
+- Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #13 และตรวจอ่านกลับยืนยัน timestamp ต้นทางสำหรับ FCM พร้อม Queue/KV ครบ
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
 - Worker ไม่มีคีย์ LINE / Thunder / Firebase อยู่ใน Secrets จึงอยู่ในโหมดปิดการรับงานจริง (`needs_configuration`); **ไม่ได้ส่งสลิปจริง**
@@ -145,3 +145,14 @@ node --test server/*.test.mjs
 - เพิ่ม Android manifest `queries` สำหรับ TTS_SERVICE เพื่อให้ Android รุ่นใหม่เข้าถึงบริการอ่านออกเสียงที่ติดตั้งได้ตามข้อกำหนดการมองเห็นแพ็กเกจ
 - แก้ข้อความหน้าแอปที่เคยอ้างว่าทุกอย่างทำบนเครื่อง ให้แสดงตามจริงว่าการตรวจสลิปอัตโนมัติต้องใช้ Cloudflare/Thunder/Firebase
 - **ยังไม่เปิดใช้กับการโอนเงินจริง**: Cloudflare Worker ยังไม่มี LINE/Thunder/Firebase Secrets และยังไม่พบสิทธิ์แก้ handler Webhook เดิม; ไม่มีการเปลี่ยน webhook, ไม่ต้องติดตั้ง APK รอบใหม่, ต้องทดสอบกับ vivo V30 Pro ก่อนส่งมอบ
+
+## ป้องกัน FCM แจ้งยอดเก่าที่มือถือ (PR #13 · 19 พ.ย. 2569)
+
+- PR #13 merged เป็น commit `e429418c38a4e6ea79f6443d92e96be100caaa89`; GitHub Actions ผ่านทั้ง Node server regression/integration tests และ Android Unit Tests/Build
+- ผลตรวจจาก Thunder ส่ง FCM พร้อม `eventTime` ซึ่งเป็นเวลา `timestamp` ของข้อความ LINE OA ต้นฉบับในหน่วยมิลลิวินาที (ส่งเป็น string ตามข้อกำหนด FCM data)
+- Cloudflare ป้องกันการส่ง FCM หากไม่พบเวลาเดิม เวลาเกิน 10 นาที หรือเวลาจากอนาคตเกิน 1 นาที; ใช้หลักเดียวกันกับการส่งผลค้างหลังจับคู่
+- Android `VerifiedPaymentMessagingService` ตรวจ `eventTime` ซ้ำก่อนแสดงการแจ้งเตือนและอ่านว่าเงินเข้า; ข้อความไม่มีเวลาหรือเกินเวลาจะไม่ประกาศยอดเงิน
+- การใช้ Firebase `ttl:120s` ยังมีอยู่ แต่ไม่ถือว่าเพียงพอจะรับรองเวลาอ่านเสียงบนมือถือโดยลำพัง
+- อัปโหลด Worker สำเร็จและอ่านโค้ดกลับตรวจครบ พร้อมคง DEVICES, RESULT_CACHE, SLIP_QUEUE และยืนยันว่า Worker มี Secrets **0 รายการ**
+- **ยังไม่ใช้งานจริงครบวงจร:** ต้องเชื่อม LINE Channel credentials, Thunder API key, Firebase service account, รหัสจับคู่ และส่งต่อข้อความจากเจ้าของ Webhook LINE OA เดิม; ต้องทดสอบเสียงบน vivo V30 Pro ก่อนส่งมอบ APK ใช้งานจริง
+- ไม่เปลี่ยน URL ของ Webhook เดิม ไม่ฝังคีย์ลงแหล่งโค้ด ไม่แก้ Bombim00/Project-1
