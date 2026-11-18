@@ -157,3 +157,15 @@ test('invalid queue message is acknowledged instead of calling Thunder',async()=
   });
   assert.equal(acks,1);
 });
+
+test('missing Thunder duplicate flag must never announce money received', async () => {
+  const mock = async url => url.startsWith('https://api-data.line.me/')
+    ? new Response(new Uint8Array([255,216,255]), {headers:{'content-type':'image/jpeg'}})
+    : Response.json({success:true,data:{
+      amountInSlip:180,
+      matchedAccount:{bank:{code:'004'},bankNumber:'123-4-56789-0'},
+    }});
+  const result=await verifySlipImage('123',{LINE_CHANNEL_ACCESS_TOKEN:'line',THUNDER_API_KEY:'t'},mock);
+  assert.equal(result.duplicate,true);
+  assert.equal(result.type,'duplicate_slip');
+});
