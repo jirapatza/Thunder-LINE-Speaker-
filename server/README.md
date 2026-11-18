@@ -8,7 +8,7 @@
 
 - Android: โค้ดรุ่น `0.5-dev` รับการแจ้งเตือน LINE, ทดลอง OCR, รับผลตรวจจาก FCM, ป้องกันพูดซ้ำด้วย event ID, ตั้งค่าการจับคู่ด้วยรหัสส่วนตัว, เพิ่มปุ่มตรวจความพร้อม Worker และต่ออายุการลงทะเบียน FCM อัตโนมัติเมื่อเปิดแอป (อย่างมากวันละครั้งหลังจับคู่); Android Build ผ่าน GitHub Actions ใน PR #7
 - Server: โค้ดอ่านรูป LINE OA, ตรวจสลิปผ่าน Thunder v2, เช็ก `matchedAccount` และ `isDuplicate`, ส่ง FCM เฉพาะ `payment_matched`; Node tests ผ่าน GitHub Actions
-- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9 และ #10 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
+- GitHub: PR #1, #2, #3, #5, #6, #7, #8, #9, #10 และ #11 merged เข้า `main`; PR #6 แก้การตัดภาพเกิน 50 รายการ/สถานะ readiness; PR #7 เพิ่มการตรวจความพร้อมจากมือถือและต่ออายุ FCM หลังเปิดแอป; GitHub Actions ผ่าน
 - Cloudflare: อัปโหลด Worker `line-oa-slip-speaker` จาก `server/line-oa-sidecar.mjs` และ `server/fcm-delivery.mjs` สำเร็จ; อัปโหลดโค้ดล่าสุดจาก PR #6 และตรวจอ่านกลับพบการกรองเหตุการณ์รูปซ้ำ การแบ่ง Queue ทีละ 100 และสถานะ `ready_for_live_test`
 - Cloudflare Queue: `line-oa-slip-verification` สร้างแล้ว และเชื่อมเป็น consumer ของ Worker แล้ว (batch 1, retry 3)
 - Cloudflare KV: `line-oa-speaker-devices` และ `line-oa-speaker-results` ผูกกับ Worker แล้ว
@@ -125,3 +125,12 @@ node --test server/*.test.mjs
 - อายุยอดค้างนับจาก `receivedAt` ของเหตุการณ์ LINE ต้นฉบับ ไม่ใช่ `verifiedAt` ของการตรวจ Thunder ในเวลาถัดมา
 - อัปโหลดโค้ดล่าสุดขึ้น Cloudflare Worker `line-oa-slip-speaker` สำเร็จและอ่านโค้ดบน Worker กลับพบเงื่อนไข timestamp ทั้งหมด พร้อมคง Binding DEVICES, RESULT_CACHE, SLIP_QUEUE ครบ
 - Cloudflare Secrets ยังว่าง จึงยังไม่พร้อมตรวจสลิปจาก LINE OA จริง, ส่ง FCM และยืนยันเสียงบน vivo V30 Pro; ไม่เปลี่ยน webhook เดิม และไม่ให้ติดตั้ง APK ใหม่ระหว่างทดสอบ
+
+## ทดสอบเส้นทางรับสลิปครบชุดแบบจำลอง (PR #11 · 18 พ.ย. 2569)
+
+- PR #11 merged (commit `b6419d133eaf0a29f73f8143f329ae7b6d8dd59a`); GitHub Actions ชุดทดสอบ Server และ Android Build ผ่าน
+- เพิ่ม `server/live-payment-flow.integration.test.mjs` เพื่อรันโค้ด Worker จริงตั้งแต่ signed forwarded LINE OA event → Queue → LINE image API → Thunder verification → Google OAuth → FCM HTTP v1 (จำลองเฉพาะ HTTP ผู้ให้บริการและฐานข้อมูล)
+- พิสูจน์ในชุดทดสอบว่า LINE ส่งเหตุการณ์เดิมซ้ำไม่ทำให้เรียก Thunder ซ้ำและไม่ส่ง FCM ซ้ำ, สลิปซ้ำ/ผู้รับไม่ตรงไม่สร้างการแจ้งรับเงิน, ลายเซ็น relay ผิดถูกปฏิเสธ
+- ทดสอบเมื่อยังไม่มีมือถือจับคู่: ผลตรวจที่ผ่านเก็บรอไว้ แล้วเมื่อมือถือจับคู่จึงส่ง FCM จากข้อมูลแคช **โดยไม่เรียก Thunder ตรวจซ้ำ**
+- **เป็นการทดสอบจำลอง ไม่ใช่การยืนยันว่าธนาคารได้รับเงินหรือเสียงดังจริงบน vivo V30 Pro**; ต้องเติมคีย์ LINE/Thunder/Firebase และต่อเหตุการณ์จากเจ้าของ Webhook เดิมก่อนทดสอบอุปกรณ์
+- ไม่มีการเปลี่ยน URL Webhook เดิม ไม่มีการติดตั้ง APK และไม่มีการอัปโหลด Worker โค้ดใหม่ เพราะ PR นี้เพิ่มเฉพาะชุดทดสอบ
