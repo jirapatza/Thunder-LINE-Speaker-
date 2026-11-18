@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { verifySignature, verifySlipImage, dispatchResult, deliverPendingResults } from './line-oa-sidecar.mjs';
+import worker, { verifySignature, verifySlipImage, dispatchResult, deliverPendingResults, enqueueImageEvents } from './line-oa-sidecar.mjs';
 import { createHmac } from 'node:crypto';
 const enc = new TextEncoder();
 const signature = (secret, raw) => createHmac('sha256', secret).update(raw).digest('base64');
@@ -168,4 +168,42 @@ test('missing Thunder duplicate flag must never announce money received', async 
   const result=await verifySlipImage('123',{LINE_CHANNEL_ACCESS_TOKEN:'line',THUNDER_API_KEY:'t'},mock);
   assert.equal(result.duplicate,true);
   assert.equal(result.type,'duplicate_slip');
+});
+
+test('image events are deduplicated within webhook payload and never silently cut at 50', async () => {
+  const batches=[];
+  const env={SLIP_QUEUE:{sendBatch:async batch=>batches.push(batch)}};
+  const events=Array.from({length:103},(_,i)=>({
+    type:'message',webhookEventId:'e'+i,
+    message:{type:'image',id:String(1000+i)},
+  }));
+  events.push({...events[0],webhookEventId:'redelivery'});
+  events.push({type:'message',message:{type:'text',id:'9999'}});
+  assert.equal(await enqueueImageEvents({events},env),103);
+  assert.deepEqual(batches.map(x=>x.length),[100,3]);
+  const sent=batches.flatMap(x=>x.map(y=>y.body.messageId));
+  assert.equal(sent.length,103);
+  assert.equal(new Set(sent).size,103);
+  assert.equal(sent[0],'1000');
+  assert.equal(sent[102],'1102');
+});
+
+test('health never claims end-to-end live delivery without a real-device test', async () => {
+  const url='https://example.invalid/health';
+  const blank=await (await worker.fetch(new Request(url),{})).json();
+  assert.equal(blank.status,'needs_configuration');
+  assert.equal(blank.endToEndVerified,false);
+  const readyEnv={
+    LINE_CHANNEL_SECRET:'secret',LINE_CHANNEL_ACCESS_TOKEN:'token',
+    THUNDER_API_KEY:'key',SLIP_QUEUE:{sendBatch:async()=>{}},
+    RESULT_CACHE:{get:async()=>null,put:async()=>{}},
+    DEVICES:{list:async()=>({keys:[{name:'device:1'}]})},
+    DEVICE_PAIRING_SECRET:'secret'.repeat(6),
+    FIREBASE_SERVICE_ACCOUNT_JSON:'configured',
+  };
+  const ready=await (await worker.fetch(new Request(url),readyEnv)).json();
+  assert.equal(ready.status,'ready_for_live_test');
+  assert.equal(ready.endToEndVerified,false);
+  assert.equal(ready.originalWebhookForwarding,'not_verified');
+  assert.equal(ready.pairedDevices,1);
 });
