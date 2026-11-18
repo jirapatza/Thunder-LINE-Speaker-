@@ -1,12 +1,31 @@
-# Thunder LINE Speaker
+# Thunder LINE Speaker — Android 0.4
 
-Android app for vivo V30 Pro that reads visible LINE notification text containing Thunder and a labeled amount, then speaks the amount in Thai.
+ส่วนอ่านแจ้งเตือน LINE และอ่านยอดเงินจากภาพในเครื่อง ไม่แตะ Webhook เดิม และไม่มีบริการส่งข้อมูลออกไปจากแอป
 
-## Build APK
-GitHub Actions builds a debug APK automatically after pushes to `main`. Open the Actions tab, select **Build Android APK**, open the latest successful run, and download `thunder-line-speaker-debug-apk` from Artifacts.
+## ความสามารถ
+- LINE แจ้งเตือนข้อความลูกค้า: พูดชื่อผู้ส่ง และถ้าระบุชื่อหวยที่รองรับจะพูดชื่อหวย **ไม่อ่านเลขที่สั่ง**
+- Thunder ส่งยอดเงินเป็นข้อความพร้อมคำว่า Thunder และป้ายกำกับยอด: พูดว่า `รับเงินเข้า ... บาทแล้วเด้อ`
+- รูปภาพที่ LINE แนบมาให้ Android ในการแจ้งเตือนแบบ BigPicture: ใช้ OCR หาเงินและพูดว่า `พบยอดเงิน ... บาทจากรูปภาพ`
+- เมื่อเปิด LINE อยู่บนหน้าจอและ **ผู้ใช้อนุญาต Accessibility**: OCR ภาพหน้าจอที่มองเห็นของ LINE โดยไม่บันทึกภาพ
+- เปิดรูปจากเครื่องหรือแชร์รูปจาก LINE มาให้แอป: OCR อัตโนมัติเมื่อได้รับภาพ
+- มีสวิตช์เปิด–ปิดเสียงลูกค้า, เสียงเงิน และ OCR หน้าจอ และปุ่มทดสอบเสียง
+- ไม่มีสิทธิ์ INTERNET ไม่มีระบบส่งภาพหรือแชตไปยังเซิร์ฟเวอร์
 
-## Install
-Install the APK, open the app, and grant Notification Access. Ensure LINE notification previews and Thai text-to-speech are enabled. Android battery management may affect background operation.
+## ข้อจำกัดที่ต้องเข้าใจ
+**Android ไม่เปิดให้แอปอ่านเนื้อรูปทุกห้องแชต LINE ขณะที่ LINE ปิดหรือหน้าจอล็อกได้เพียงเพราะมี Notification Access**. ในบางรุ่น LINE แจ้งแค่ว่า "ส่งรูปภาพ" โดยไม่แนบ bitmap ใน notification ดังนั้น OCR จากแจ้งเตือนจะไม่มีภาพให้สแกน. Accessibility screenshot อ่านได้เฉพาะหน้าจอ LINE ที่เปิดแสดงอยู่ และต้องอนุญาตเอง. รูปภาพจากหน้าจอเป็นการรู้จำตัวเลข **ไม่ใช่การยืนยันการชำระเงินจากธนาคาร**. OCR รุ่นที่ติดตั้งเป็น ML Kit Latin script; การรู้จำตัวอักษรภาษาไทยไม่รับประกัน.
 
-## Limitations
-This version cannot read text inside image-only LINE notifications, does not modify the LINE webhook, and does not send data to a server. Notification content must contain the word Thunder and an amount label. Build and device behavior must be tested.
+## ตั้งค่า vivo
+1. ติดตั้ง APK, เปิดแอป, กดทดลองเสียง
+2. เปิด "อนุญาตอ่านการแจ้งเตือน" สำหรับ Thunder LINE Speaker; เปิดแสดงเนื้อหาแจ้งเตือนใน LINE
+3. ถ้าต้องการ OCR รูปที่เปิดบนหน้าจอ LINE: เปิด "อนุญาตอ่านภาพที่แสดงใน LINE" แล้วเปิดบริการ Thunder LINE OCR (Android อาจบล็อก accessibility สำหรับแอป sideloaded; ไม่ควรเลี่ยงข้อจำกัดความปลอดภัยโดยไม่เข้าใจความเสี่ยง)
+4. ปรับการทำงานเบื้องหลังของ vivo เฉพาะเมื่อจำเป็น ถ้า TTS ถูกระบบพัก
+5. ถ้าแอปไม่สามารถดึงรูปจากแจ้งเตือนได้ ใช้เมนูเลือกภาพในแอป หรือแชร์ภาพเข้ามา
+
+## สร้าง APK
+GitHub Actions รัน unit tests และ build APK บน Pull Request และเมื่อ merge เข้า main. ดูไฟล์ Artifact `thunder-line-speaker-debug-apk` ในรอบที่ผ่านเท่านั้น.
+
+## ความปลอดภัย
+- แจ้งเตือนลูกค้ากรองเฉพาะแพ็กเกจ LINE ทางการ `jp.naver.line.android` (LINE ที่โคลนอาจใช้แพ็กเกจอื่น)
+- ระบบสแกนหน้าจอทำงานเฉพาะหน้าจอ LINE เมื่อได้รับสิทธิ์ Accessiblity และเปิดสวิตช์ OCR
+- การอ่านข้อความประกอบภาพอาจผิด ต้องตรวจสอบสลิปจากแหล่งยืนยันจริงก่อนถือว่ารับเงินเรียบร้อย
+- ไม่มีการดึงภาพจากทุกแชตผ่าน API ของ LINE หรือการเปลี่ยน Webhook เดิม
