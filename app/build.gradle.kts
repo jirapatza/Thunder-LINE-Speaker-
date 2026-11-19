@@ -6,8 +6,8 @@ android {
         applicationId = "com.thunder.linespeaker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "0.5-dev"
+        versionCode = 6
+        versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "0.6-dev"
         // GitHub Actions supplies Firebase app identifiers at release time.
         // Empty values keep development builds functional but push DISABLED.
         resValue("string", "firebase_android_app_id",
