@@ -1,16 +1,12 @@
 package com.thunder.linespeaker
 
-import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -30,7 +26,7 @@ class MainActivity : Activity() {
             textSize = 26f
         })
         layout.addView(TextView(this).apply {
-            text = "ลูกค้าทัก LINE: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\nเงินเข้า: พูดเฉพาะยอดที่ตรวจสลิปผ่าน Thunder และส่งผลผ่าน Firebase\nภาพสลิปที่แชร์มา: OCR อ่านตัวเลขจากภาพเท่านั้น ไม่ใช่หลักฐานยืนยันโอน\n\nการตรวจสลิปอัตโนมัติใช้ Cloudflare / Thunder / Firebase เมื่อเชื่อมต่อแล้ว"
+            text = "LINE แจ้งเตือนมา → มือถือพูดให้รู้ทันที\nแจ้งเตือนรูปภาพหรือสลิป: บอกว่ามีรูปหรือสลิปเข้ามา\nถ้าข้อความแจ้งยอดเงิน: อ่านเฉพาะยอด ไม่ตรวจสอบการโอน\nข้อความลูกค้า: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\n\nทำงานจากการแจ้งเตือน LINE ในเครื่อง ไม่ต้องเปลี่ยน Webhook หรือเชื่อม Thunder API\nหมายเหตุ: หาก LINE ไม่แสดงยอดในแจ้งเตือน แอปจะอ่านยอดจากรูปที่ซ่อนอยู่ไม่ได้"
             textSize = 16f
         })
         @Suppress("DEPRECATION")
@@ -48,66 +44,47 @@ class MainActivity : Activity() {
                 setOnClickListener { pressed() }
             })
         }
-        addSwitch("พูดเมื่อลูกค้าทัก LINE", Preferences.customers(this)) { Preferences.setCustomers(this, it) }
-        addSwitch("พูดยอดเงินเมื่อสลิปตรวจผ่าน Thunder จริง", Preferences.payments(this)) { Preferences.setPayments(this, it) }
-        addSwitch("OCR ภาพที่เปิดอยู่ใน LINE", Preferences.screenOcr(this)) { Preferences.setScreenOcr(this, it) }
-        val pairingField = EditText(this).apply {
-            hint = "รหัสจับคู่ส่วนตัว (เมื่อเซิร์ฟเวอร์พร้อม)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine(true)
+        addSwitch("อ่านเสียงเมื่อลูกค้าทัก LINE", Preferences.customers(this)) {
+            Preferences.setCustomers(this, it)
         }
-        layout.addView(pairingField)
-        addButton("จับคู่มือถือเพื่อรับผลตรวจสลิป LINE OA อัตโนมัติ") {
-            val code = pairingField.text?.toString()?.trim().orEmpty()
-            info.text = "กำลังตรวจสอบการจับคู่..."
-            PushPairing.pair(this, code) { _, message ->
-                runOnUiThread { info.text = message }
-            }
+        addSwitch("อ่านเสียงแจ้งเตือนรูปภาพ/สลิป/ยอดจาก LINE", Preferences.payments(this)) {
+            Preferences.setPayments(this, it)
         }
-        addButton("อนุญาตแจ้งเตือนผลตรวจสลิป") {
-            if (Build.VERSION.SDK_INT >= 33 &&
-                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
-            } else {
-                info.text = "เปิดสิทธิ์แจ้งเตือนแล้ว"
-            }
+        addSwitch("OCR ภาพจาก LINE เพิ่มเติม (ทางเลือก)", Preferences.screenOcr(this)) {
+            Preferences.setScreenOcr(this, it)
         }
-        addButton("ตรวจความพร้อม Cloudflare / LINE / Thunder / Firebase") {
-            info.text = "กำลังตรวจสอบสถานะระบบ..."
-            PushPairing.checkServerStatus { status ->
-                runOnUiThread { info.text = status }
-            }
-        }
-        addButton("อนุญาตอ่านการแจ้งเตือน") {
+        addButton("อนุญาตอ่านการแจ้งเตือน LINE") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        addButton("อนุญาตอ่านภาพที่แสดงใน LINE") {
+        addButton("ทดสอบเสียงแจ้งเตือนรูปภาพ") {
+            SpeechEngine.speak(
+                this, "มีรูปภาพส่งเข้ามาทาง LINE แล้วเด้อ",
+                "test-photo:" + System.currentTimeMillis(), 0
+            )
+        }
+        addButton("ทดสอบเสียงแจ้งยอดเงิน") {
+            SpeechEngine.speak(
+                this, "มีแจ้งเตือนยอด 180 บาทแล้วเด้อ",
+                "test-amount:" + System.currentTimeMillis(), 0
+            )
+        }
+        addButton("อนุญาต OCR ภาพที่เปิดอยู่ใน LINE (ทางเลือก)") {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        addButton("เลือกภาพสลิปจากเครื่อง") {
+        addButton("เลือกภาพสลิปจากเครื่อง (ทางเลือก)") {
             startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "image/*"
                 addCategory(Intent.CATEGORY_OPENABLE)
             }, 101)
         }
-        addButton("ทดลองเสียงภาษาไทย") {
-            SpeechEngine.speak(this, "รับเงินเข้า 180 บาทแล้วเด้อ", "test:${System.currentTimeMillis()}", 0)
-        }
         info = TextView(this).apply {
-            text = if (FirebaseBootstrap.isConfigured(this@MainActivity)) {
-                "Firebase พร้อมให้จับคู่ (ต้องมีรหัสจับคู่ของเซิร์ฟเวอร์)"
-            } else {
-                "ยังไม่มีค่า Firebase จริง: โหมดรับผลตรวจจากเซิร์ฟเวอร์ยังไม่ทำงาน รุ่นนี้ยังเป็นโค้ดสำหรับทดสอบ ไม่ต้องติดตั้งซ้ำ"
-            }
+            text = "เปิดสิทธิ์อ่านการแจ้งเตือนให้แอปก่อนใช้จริง หากเป็นรูปอย่างเดียวจะบอกว่ามีรูปส่งมา ไม่เดายอดเงิน"
             textSize = 15f
             setPadding(0, 24, 0, 0)
         }
         layout.addView(info)
         setContentView(ScrollView(this).apply { addView(layout) })
         handleIncomingImage(intent)
-        // Renews FCM registration periodically even when the token itself did
-        // not rotate. Requires no new pairing or new app installation.
-        PushPairing.refreshWhenAppOpens(this)
     }
 
     override fun onNewIntent(intent: Intent) {
