@@ -4,10 +4,13 @@ import android.app.Notification
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
 class LineNotificationService : NotificationListenerService() {
+    private val deduper = LineNoticeDeduper()
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         // Listen to the installed LINE app only. Leave the LINE OA webhook alone.
         if (sbn.packageName != "jp.naver.line.android") return
@@ -25,33 +28,55 @@ class LineNotificationService : NotificationListenerService() {
         } catch (_: Exception) {
             emptyList()
         }
-        val messageText = messages.lastOrNull()?.text?.toString().orEmpty().trim()
+        // Prefer the newest message's sender over a group/conversation title.
+        val latest = messages.lastOrNull()
+        val messageSender = latest?.senderPerson?.name?.toString()?.trim().orEmpty()
+        val effectiveSender = messageSender.ifBlank { sender }
+        val messageText = latest?.text?.toString().orEmpty().trim()
         val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
             ?.lastOrNull()?.toString().orEmpty().trim()
         val body = messageText.ifBlank { directText }.ifBlank { textLines }
-        val hasPicture = messages.any { it.dataMimeType?.startsWith("image/") == true } ||
-            extras.containsKey(Notification.EXTRA_PICTURE) ||
-            extras.containsKey(Notification.EXTRA_PICTURE_ICON)
-        if (sender.isBlank() && body.isBlank() && !hasPicture) return
+        // Do not label a new text message as a picture because an earlier
+        // item in the same MessagingStyle notification contained a photo.
+        val hasPicture = latest?.dataMimeType?.startsWith("image/") == true ||
+            (messages.isEmpty() && (
+                extras.containsKey(Notification.EXTRA_PICTURE) ||
+                extras.containsKey(Notification.EXTRA_PICTURE_ICON)
+            ))
+        if (effectiveSender.isBlank() && body.isBlank() && !hasPicture) return
 
         val slipVoice = Preferences.payments(this)
         val alert = LineAnnouncementPolicy.choose(
-            sender = sender,
+            sender = effectiveSender,
             message = body,
             hasPicture = hasPicture,
             customerVoice = Preferences.customers(this),
             slipVoice = slipVoice
         )
+        val wantsOcr = slipVoice && hasPicture && Preferences.screenOcr(this)
+        if (alert == null && !wantsOcr) return
+
+        // Notification callbacks can fire many times for one LINE message.
+        // A MessagingStyle timestamp separates two identical new messages.
+        val fingerprint = listOf(
+            effectiveSender,
+            body,
+            latest?.timestamp?.toString().orEmpty(),
+            hasPicture.toString(),
+            alert?.kind.orEmpty()
+        ).joinToString("|")
+        if (!deduper.accept(sbn.key, fingerprint, SystemClock.elapsedRealtime())) return
+
         if (alert != null) {
             SpeechEngine.speak(
                 this, alert.phrase,
-                "line:" + sbn.key + ":" + alert.kind + ":" + body, 30_000L
+                "line:" + sbn.key + ":" + fingerprint, 30_000L
             )
         }
 
         // Optional OCR only when LINE actually exposed a picture payload.
         // Many LINE notifications contain just "ส่งรูปภาพ" and have no bitmap.
-        if (slipVoice && hasPicture && Preferences.screenOcr(this)) {
+        if (wantsOcr) {
             scanNotificationPicture(notification, "picture:" + sbn.key)
         }
     }
