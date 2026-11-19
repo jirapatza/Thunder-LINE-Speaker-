@@ -1,6 +1,8 @@
 package com.thunder.linespeaker
 
 import android.app.Activity
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -14,6 +16,7 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var info: TextView
+    private lateinit var accessInfo: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +56,14 @@ class MainActivity : Activity() {
         addSwitch("OCR ภาพจาก LINE เพิ่มเติม (ทางเลือก)", Preferences.screenOcr(this)) {
             Preferences.setScreenOcr(this, it)
         }
+        accessInfo = TextView(this).apply {
+            textSize = 17f
+            setPadding(0, 20, 0, 8)
+        }
+        layout.addView(accessInfo)
+        addButton("ตรวจสถานะสิทธิ์อ่านแจ้งเตือน") {
+            updateAccessStatus()
+        }
         addButton("อนุญาตอ่านการแจ้งเตือน LINE") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
@@ -85,6 +96,28 @@ class MainActivity : Activity() {
         layout.addView(info)
         setContentView(ScrollView(this).apply { addView(layout) })
         handleIncomingImage(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::accessInfo.isInitialized) updateAccessStatus()
+    }
+
+    private fun updateAccessStatus() {
+        val listener = ComponentName(this, LineNotificationService::class.java)
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            getSystemService(NotificationManager::class.java)
+                ?.isNotificationListenerAccessGranted(listener) == true
+        } else {
+            Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+                ?.split(":")
+                ?.any { ComponentName.unflattenFromString(it) == listener } == true
+        }
+        accessInfo.text = if (granted) {
+            "สิทธิ์อ่านแจ้งเตือน: อนุญาตแล้ว ✓"
+        } else {
+            "สิทธิ์อ่านแจ้งเตือน: ยังไม่ได้อนุญาต — กดปุ่มอนุญาตด้านล่าง"
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
