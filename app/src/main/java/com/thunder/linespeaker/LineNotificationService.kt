@@ -9,48 +9,50 @@ import android.service.notification.StatusBarNotification
 
 class LineNotificationService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Standard LINE package. Some cloned or work-profile installs use different IDs.
+        // Listen to the installed LINE app only. Leave the LINE OA webhook alone.
         if (sbn.packageName != "jp.naver.line.android") return
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
         val extras = notification.extras
         val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
-        val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+        val directText = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
             ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
-        if (sender.isBlank() && body.isBlank()) return
+        val messages = try {
+            extras.getParcelableArray(Notification.EXTRA_MESSAGES)?.let {
+                Notification.MessagingStyle.Message.getMessagesFromBundleArray(it)
+            }.orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val messageText = messages.lastOrNull()?.text?.toString().orEmpty().trim()
+        val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            ?.lastOrNull()?.toString().orEmpty().trim()
+        val body = messageText.ifBlank { directText }.ifBlank { textLines }
+        val hasPicture = messages.any { it.dataMimeType?.startsWith("image/") == true } ||
+            extras.containsKey(Notification.EXTRA_PICTURE) ||
+            extras.containsKey(Notification.EXTRA_PICTURE_ICON)
+        if (sender.isBlank() && body.isBlank() && !hasPicture) return
 
-        val combined = "$sender $body"
-        val thunderMessage = sender.contains("Thunder", ignoreCase = true)
-
-        if (thunderMessage) {
-            // LINE contact names are arbitrary, including "Thunder". A
-            // display name and an amount in text cannot certify a transfer.
-            // Only the authenticated verified FCM event may announce receipt.
-            // Keep optional OCR as clearly unverified picture reading.
-            if (Preferences.payments(this) && Preferences.screenOcr(this)) {
-                scanNotificationPicture(notification, "thunder:${sbn.key}")
-            }
-            return
+        val slipVoice = Preferences.payments(this)
+        val alert = LineAnnouncementPolicy.choose(
+            sender = sender,
+            message = body,
+            hasPicture = hasPicture,
+            customerVoice = Preferences.customers(this),
+            slipVoice = slipVoice
+        )
+        if (alert != null) {
+            SpeechEngine.speak(
+                this, alert.phrase,
+                "line:" + sbn.key + ":" + alert.kind + ":" + body, 30_000L
+            )
         }
 
-        // Customer voice: do not read actual lottery numbers or private chat contents aloud.
-        if (Preferences.customers(this) && body.isNotBlank()) {
-            val safeName = sender.take(40).ifBlank { "ลูกค้า" }
-            val lotName = listOf(
-                "ฮานอย VIP", "ฮานอยพิเศษ", "ฮานอยสามัคคี",
-                "ฮานอย", "ลาวพัฒนา", "ลาวประชาชน", "ลาวอาเซียน",
-                "รัฐบาล", "หุ้น"
-            ).firstOrNull { body.contains(it, ignoreCase = true) }
-            val phrase = if ((body.contains("หวย") || body.contains("สั่ง")) && lotName != null) {
-                "$safeName ซื้อหวย$lotName"
-            } else {
-                "$safeName ทัก LINE มา"
-            }
-            SpeechEngine.speak(this, phrase, "customer:$sender:$body", 30_000L)
-        }
-        // For actual image text, fall back to an available picture payload (if any).
-        if (Preferences.payments(this) && Preferences.screenOcr(this)) {
-            scanNotificationPicture(notification, "picture:${sbn.key}")
+        // Optional OCR only when LINE actually exposed a picture payload.
+        // Many LINE notifications contain just "ส่งรูปภาพ" and have no bitmap.
+        if (slipVoice && hasPicture && Preferences.screenOcr(this)) {
+            scanNotificationPicture(notification, "picture:" + sbn.key)
         }
     }
 
