@@ -141,6 +141,14 @@ class LineNotificationService : NotificationListenerService() {
     }
 
     private fun tryOpenImageChat(notification: Notification, latest: Boolean) {
+        if (!Preferences.autoOpenImage(this)) {
+            VoiceHealth.slipOcrStatus(this, "ไม่มีภาพแนบ และยังปิดตัวเลือกทดลองเปิดแชต")
+            return
+        }
+        if (!Preferences.screenSlipOcr(this)) {
+            VoiceHealth.slipOcrStatus(this, "ไม่มีภาพแนบ กรุณาเปิดตัวเลือกอ่านภาพหน้าจอ LINE OA")
+            return
+        }
         val power = getSystemService(PowerManager::class.java) ?: return
         val keyguard = getSystemService(KeyguardManager::class.java) ?: return
         val manager = getSystemService(AccessibilityManager::class.java) ?: return
@@ -151,7 +159,18 @@ class LineNotificationService : NotificationListenerService() {
             val service = info.resolveInfo?.serviceInfo
             service != null && ComponentName(service.packageName, service.name) == component
         }
-        val action = notification.contentIntent ?: return
+        if (!accessibilityEnabled) {
+            VoiceHealth.slipOcrStatus(this, "กรุณาอนุญาต Accessibility สำหรับอ่านภาพ LINE OA")
+            return
+        }
+        if (!power.isInteractive || keyguard.isKeyguardLocked) {
+            VoiceHealth.slipOcrStatus(this, "เครื่องล็อกหรือปิดหน้าจอ เปิดแชตอัตโนมัติไม่ได้")
+            return
+        }
+        val action = notification.contentIntent ?: run {
+            VoiceHealth.slipOcrStatus(this, "แจ้งเตือน LINE OA ไม่มีปุ่มเปิดแชต กรุณาเปิดแชตเอง")
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         if (!ImageChatOpenPolicy.canOpen(
                 Preferences.autoOpenImage(this), Preferences.screenSlipOcr(this), accessibilityEnabled,
