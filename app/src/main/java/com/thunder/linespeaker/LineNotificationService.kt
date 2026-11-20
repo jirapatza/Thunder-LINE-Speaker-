@@ -1,5 +1,6 @@
 package com.thunder.linespeaker
 
+import android.app.Notification
 import android.content.ComponentName
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
@@ -87,7 +88,7 @@ class LineNotificationService : NotificationListenerService() {
             // Never retain the original chat text in deduplication keys.
             val fingerprintSource = listOf(
                 item.sender, item.body, item.timestampMs.toString(),
-                item.hasPicture.toString(), alert?.kind.orEmpty()
+                item.hasPicture.toString(), alert.kind
             ).joinToString("|")
             val digest = MessageDigest.getInstance("SHA-256")
                 .digest(fingerprintSource.toByteArray(Charsets.UTF_8))
@@ -95,9 +96,7 @@ class LineNotificationService : NotificationListenerService() {
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
 
             VoiceHealth.receivedLineNotice(this)
-            if (alert != null) {
-                SpeechEngine.speak(this, alert.phrase, "line:" + sbn.key + ":" + digest, 30_000L)
-            }
+            SpeechEngine.speak(this, alert.phrase, "line:" + sbn.key + ":" + digest, 30_000L)
         }
     }
 
