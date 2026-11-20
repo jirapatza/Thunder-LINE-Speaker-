@@ -21,7 +21,7 @@ export function imageRelayConfigured(env) {
   return enabled(env) && Boolean(
     env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN &&
     typeof env.IMAGE_LINK_SECRET === 'string' && env.IMAGE_LINK_SECRET.length >= 32 &&
-    env.SLIP_QUEUE?.sendBatch && env.RESULT_CACHE?.get &&
+    env.SLIP_QUEUE?.sendBatch && env.DEVICES?.get && env.RESULT_CACHE?.get &&
     env.RESULT_CACHE?.put && pushConfigured(env)
   );
 }
