@@ -19,6 +19,14 @@ class LineNoticeDeduperTest {
         assertFalse(deduper.accept("same-chat", "ส่งรูปภาพ|1200", 300L))
     }
 
+    @Test fun outOfOrderRepostsDoNotRepeatOlderMessage() {
+        val deduper = LineNoticeDeduper()
+        assertTrue(deduper.accept("chat", "old-at-1000", 1_000L))
+        assertTrue(deduper.accept("chat", "new-at-2000", 1_100L))
+        assertFalse(deduper.accept("chat", "old-at-1000", 1_200L))
+        assertFalse(deduper.accept("chat", "new-at-2000", 1_300L))
+    }
+
     @Test fun differentContentsOfSameNotificationAnnounce() {
         val deduper = LineNoticeDeduper()
         assertTrue(deduper.accept("line", "ยอด 100", 1L))

@@ -8,12 +8,9 @@ object Preferences {
 
     fun customers(context: Context): Boolean = prefs(context).getBoolean("customers", true)
     fun payments(context: Context): Boolean = prefs(context).getBoolean("payments", true)
-    fun screenOcr(context: Context): Boolean = prefs(context).getBoolean("screen_ocr", false)
 
     fun setCustomers(context: Context, enabled: Boolean) =
         prefs(context).edit().putBoolean("customers", enabled).apply()
     fun setPayments(context: Context, enabled: Boolean) =
         prefs(context).edit().putBoolean("payments", enabled).apply()
-    fun setScreenOcr(context: Context, enabled: Boolean) =
-        prefs(context).edit().putBoolean("screen_ocr", enabled).apply()
 }

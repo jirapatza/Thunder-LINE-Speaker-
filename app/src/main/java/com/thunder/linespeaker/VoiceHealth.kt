@@ -63,7 +63,7 @@ internal object VoiceHealth {
         val connection = if (listenerBound) "เชื่อมต่อในขณะนี้" else "ยังไม่พบการเชื่อมต่อในรอบนี้"
         return "ตัวอ่านแจ้งเตือน: $connection\n" +
             "เชื่อมต่อล่าสุด: " + time("last_listener_connect") + "\n" +
-            "แจ้งเตือน LINE ที่รับล่าสุด: " + time("last_line_notice") + "\n" +
+            "แจ้งเตือน LINE OA ที่รับล่าสุด: " + time("last_line_notice") + "\n" +
             "สถานะเสียงล่าสุด: $status\n" +
             "เริ่มพูดล่าสุด: " + time("last_speech_start") + "\n" +
             "พูดจบล่าสุด: " + time("last_speech_finish") + "\n" +
