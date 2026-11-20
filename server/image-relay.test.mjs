@@ -27,7 +27,7 @@ function env(overrides={}) {
     DEVICE_PAIRING_SECRET:code,
     IMAGE_LINK_SECRET:secret,
     FIREBASE_SERVICE_ACCOUNT_JSON:'test-service',
-    DEVICES:memoryKV({'device:'+device:{token:'valid-device-token-long-enough'}}),
+    DEVICES:memoryKV({['device:'+device]:{token:'valid-device-token-long-enough'}}),
     RESULT_CACHE:memoryKV(),
     SLIP_QUEUE:{sendBatch:async()=>{}},
     ...overrides,
