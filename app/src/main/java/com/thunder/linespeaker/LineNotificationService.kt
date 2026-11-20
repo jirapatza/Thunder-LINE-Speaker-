@@ -95,6 +95,10 @@ class LineNotificationService : NotificationListenerService() {
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
 
+            if (alert.kind == "customer" && !CustomerNoticeStore.accept(
+                    this, conversationTitle, item.sender, nowMs
+                )) continue
+
             VoiceHealth.receivedLineNotice(this)
             val speechKey = "line:" + sbn.key + ":" + digest
             if (alert.kind == "picture" || alert.kind == "slip") {
