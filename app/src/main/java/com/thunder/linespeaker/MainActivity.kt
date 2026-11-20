@@ -68,6 +68,13 @@ class MainActivity : Activity() {
             "อ่านยอดจากรูปที่เปิดใน LINE OA (ต้องอนุญาต Accessibility)",
             Preferences.screenSlipOcr(this)
         ) { Preferences.setScreenSlipOcr(this, it) }
+        addSwitch("ทดลองเปิดแชตเมื่อมีรูป (เฉพาะขณะปลดล็อก)", Preferences.autoOpenImage(this)) {
+            Preferences.setAutoOpenImage(this, it)
+        }
+        layout.addView(TextView(this).apply {
+            text = "ตัวเลือกนี้อาจเปิด LINE OA ขัดจังหวะการใช้งาน ต้องเปิดการอ่านภาพหน้าจอและสิทธิ์ Accessibility ด้วย Android อาจไม่อนุญาตให้เปิดแชตอัตโนมัติ"
+            textSize = 14f
+        })
         addButton("อนุญาตอ่านภาพที่เปิดอยู่ใน LINE OA (ทางเลือก)") {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
