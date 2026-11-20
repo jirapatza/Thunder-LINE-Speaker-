@@ -49,8 +49,8 @@ class LineOaScreenSlipService : AccessibilityService() {
             takeScreenshot(
                 Display.DEFAULT_DISPLAY,
                 mainExecutor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(result: ScreenshotResult) {
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                         val hardwareBuffer = result.hardwareBuffer
                         val image: Bitmap? = try {
                             Bitmap.wrapHardwareBuffer(hardwareBuffer, result.colorSpace)
