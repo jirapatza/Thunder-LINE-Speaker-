@@ -19,21 +19,21 @@ internal object SlipImageReader {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
-    fun fromBitmap(bitmap: Bitmap, callback: (String?) -> Unit) {
+    fun fromBitmap(bitmap: Bitmap, allowUnlabeled: Boolean = false, callback: (String?) -> Unit) {
         try {
             recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener { callback(SlipAmountParser.find(it.text)) }
+                .addOnSuccessListener { callback(SlipAmountParser.find(it.text, allowUnlabeled)) }
                 .addOnFailureListener { callback(null) }
         } catch (_: Exception) {
             callback(null)
         }
     }
 
-    fun fromUri(context: Context, uri: Uri, callback: (String?) -> Unit) {
+    fun fromUri(context: Context, uri: Uri, allowUnlabeled: Boolean = false, callback: (String?) -> Unit) {
         try {
             val image = InputImage.fromFilePath(context, uri)
             recognizer.process(image)
-                .addOnSuccessListener { callback(SlipAmountParser.find(it.text)) }
+                .addOnSuccessListener { callback(SlipAmountParser.find(it.text, allowUnlabeled)) }
                 .addOnFailureListener { callback(null) }
         } catch (_: Exception) {
             callback(null)
@@ -48,10 +48,11 @@ internal object SlipImageReader {
         context: Context,
         notification: Notification,
         imageUri: Uri?,
+        allowUnlabeled: Boolean = false,
         callback: (String?) -> Unit
     ): Boolean {
         if (imageUri != null) {
-            fromUri(context, imageUri, callback)
+            fromUri(context, imageUri, allowUnlabeled, callback)
             return true
         }
         val extras = notification.extras
@@ -62,7 +63,7 @@ internal object SlipImageReader {
             extras.getParcelable(Notification.EXTRA_PICTURE)
         }
         if (bitmap != null) {
-            fromBitmap(bitmap, callback)
+            fromBitmap(bitmap, allowUnlabeled, callback)
             return true
         }
         if (Build.VERSION.SDK_INT >= 33) {
@@ -73,7 +74,7 @@ internal object SlipImageReader {
             val drawable = try { icon?.loadDrawable(context) } catch (_: Exception) { null }
             val iconBitmap = (drawable as? BitmapDrawable)?.bitmap
             if (iconBitmap != null) {
-                fromBitmap(iconBitmap, callback)
+                fromBitmap(iconBitmap, allowUnlabeled, callback)
                 return true
             }
         }
