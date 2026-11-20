@@ -11,6 +11,16 @@ import android.service.notification.StatusBarNotification
 class LineNotificationService : NotificationListenerService() {
     private val deduper = LineNoticeDeduper()
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        VoiceHealth.listenerConnected(this)
+    }
+
+    override fun onListenerDisconnected() {
+        VoiceHealth.listenerDisconnected()
+        super.onListenerDisconnected()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         // Listen to the installed LINE app only. Leave the LINE OA webhook alone.
         if (sbn.packageName != "jp.naver.line.android") return
@@ -66,6 +76,7 @@ class LineNotificationService : NotificationListenerService() {
             alert?.kind.orEmpty()
         ).joinToString("|")
         if (!deduper.accept(sbn.key, fingerprint, SystemClock.elapsedRealtime())) return
+        VoiceHealth.receivedLineNotice(this)
 
         if (alert != null) {
             SpeechEngine.speak(
