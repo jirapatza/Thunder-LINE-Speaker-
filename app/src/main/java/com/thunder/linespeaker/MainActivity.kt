@@ -10,7 +10,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -21,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var accessInfo: TextView
     private lateinit var sourceInfo: TextView
     private lateinit var voiceInfo: TextView
+    private lateinit var relayInfo: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,7 +38,8 @@ class MainActivity : Activity() {
         layout.addView(TextView(this).apply {
             text = "อ่านข้อความแจ้งเตือนเฉพาะ LINE Official Account\n" +
                 "แจ้งยอดจากข้อความที่เห็นได้ หรืออ่านยอดในรูปสลิปถ้า Android แนบภาพมา\n" +
-                "ถ้าแจ้งเตือนมีแค่คำว่า 'ส่งรูปภาพ' ต้องเปิดรูปใน LINE OA หรือแชร์รูปให้แอปอ่าน\n" +
+                "โหมดอัตโนมัติ: LINE OA รับรูป → Worker ส่งลิงก์ภาพ → มือถือ OCR และอ่านยอด\n" +
+                "ต้องตั้งค่า Worker/Firebase และจับคู่อุปกรณ์ก่อนจึงจะใช้โหมดนี้ได้\n" +
                 "ไม่เปิดดูแอปอื่น ไม่ตรวจสอบการโอน และไม่แก้ Thunder Webhook"
             textSize = 16f
         })
@@ -75,6 +79,42 @@ class MainActivity : Activity() {
                 type = "image/*"
                 addCategory(Intent.CATEGORY_OPENABLE)
             }, 201)
+        }
+        layout.addView(TextView(this).apply {
+            text = "อ่านยอดสลิปอัตโนมัติ (FCM + OCR ในเครื่อง)"
+            textSize = 19f
+            setPadding(0, 18, 0, 4)
+        })
+        relayInfo = TextView(this).apply {
+            textSize = 15f
+            text = if (FirebaseBootstrap.isConfigured(this@MainActivity)) {
+                "Firebase ใน APK: ตั้งค่าแล้ว — ตรวจ Worker และจับคู่อุปกรณ์"
+            } else {
+                "Firebase ใน APK: ยังไม่ได้ตั้งค่า — ระบบอัตโนมัติยังไม่พร้อม"
+            }
+        }
+        layout.addView(relayInfo)
+        val pairCode = EditText(this).apply {
+            hint = "รหัสจับคู่จาก Worker (ไม่ต้องส่งลงแชต)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+        }
+        layout.addView(pairCode)
+        addButton("จับคู่มือถือเพื่อรับรูปสลิปอัตโนมัติ") {
+            val value = pairCode.text.toString().trim()
+            relayInfo.text = "กำลังจับคู่กับ Worker..."
+            PushPairing.pair(this, value) { success, message ->
+                runOnUiThread {
+                    relayInfo.text = message
+                    if (success) pairCode.text.clear()
+                }
+            }
+        }
+        addButton("ตรวจสถานะ Worker สำหรับอ่านสลิป") {
+            relayInfo.text = "กำลังตรวจ Worker..."
+            PushPairing.status { message ->
+                runOnUiThread { relayInfo.text = message }
+            }
         }
         sourceInfo = TextView(this).apply {
             textSize = 16f
@@ -181,6 +221,7 @@ class MainActivity : Activity() {
         if (::sourceInfo.isInitialized) updateLineOaStatus()
         if (::accessInfo.isInitialized) updateAccessStatus()
         if (::voiceInfo.isInitialized) voiceInfo.text = VoiceHealth.summary(this)
+        PushPairing.refreshWhenAppOpens(this)
     }
 
     private fun updateLineOaStatus() {

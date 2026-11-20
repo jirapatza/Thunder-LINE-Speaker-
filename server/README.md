@@ -1,3 +1,15 @@
+# v0.11 — ทางเลือกอ่านยอดจากรูปสลิปอัตโนมัติบนมือถือ (ยังไม่ได้เปิด Production)
+
+โหมด SLIP_PROCESSING_MODE=image_relay เพิ่มขึ้นมาเพื่อ **ไม่เรียก Thunder API ตรวจสลิปซ้ำ** โดยใช้ Webhook LINE OA ที่มีอยู่เดิมส่งต่อเหตุการณ์พร้อม HMAC, Worker สร้าง FCM ลิงก์รูปภาพที่เซ็นสำหรับมือถือรายเครื่องและหมดอายุภายใน 2 นาที, มือถือใช้ WorkManager ดึงรูปแล้วทำ OCR ด้วย ML Kit ในเครื่อง ทั้งหมดเป็นการอ่านจำนวนเงินที่อยู่ในภาพ ไม่ใช่การตรวจว่าเงินเข้าจริง
+
+**ค่าปริยายยังเป็นโหมด verified_thunder เดิม** และไม่มีการแก้ URL Webhook LIVE หรือ deploy Worker นี้อัตโนมัติ การเปิด mode image_relay ต้องมี LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN, FIREBASE_SERVICE_ACCOUNT_JSON, DEVICE_PAIRING_SECRET, IMAGE_LINK_SECRET (>=32 อักขระ), SLIP_QUEUE / DEVICES / RESULT_CACHE bindings, Firebase build vars และการส่งต่อจาก Webhook เดิมที่ได้รับอนุญาต
+
+**ตรวจ Cloudflare จริง 20 พ.ย. 2569:** Worker line-oa-slip-speaker มี bindings แต่ไม่มี Secrets จึงยังส่งภาพจริงผ่าน FCM ไม่ได้; ต้องจับคู่และทดสอบบน vivo V30 Pro ก่อนถือว่าใช้งานได้ ตอนนี้ยังไม่มีหลักฐาน E2E สำเร็จ โหมดใหม่ไม่สามารถใช้งานได้เพียงเพราะผ่าน Unit Tests
+
+เอกสารวิธีใช้งานรุ่นล่าสุดอยู่ที่ README.md ของโปรเจกต์ ส่วนด้านล่างเป็นประวัติ/คำอธิบายโหมด Thunder ที่คงไว้เพื่อไม่ให้การทำงานเดิมเสีย
+
+---
+
 # Thunder LINE Speaker — LINE OA / Thunder / FCM
 
 ## สถานะจริง ณ 19 พฤศจิกายน 2569

@@ -158,3 +158,27 @@ export async function sendPaymentToDevices(result, env, fetchFn = fetch, at = Ma
   }
   return {sent};
 }
+
+
+/**
+ * Send individually signed image-retrieval tickets to paired phones.
+ * Unlike payment_matched, this carries NO amount and no claim of verification.
+ */
+export async function sendDataToDevices(env, payloadForDevice, fetchFn=fetch, at=Math.floor(Date.now()/1000)) {
+  if (!pushConfigured(env)) throw new Error('push_not_configured');
+  const listing=await env.DEVICES.list({prefix:'device:',limit:100});
+  if (!listing.keys?.length) return {sent:0,noDevices:true};
+  const {accessToken,projectId}=await oauthToken(env,fetchFn,at);
+  let sent=0;
+  for(const key of listing.keys){
+    const stored=await env.DEVICES.get(key.name,'json');
+    if (!stored?.token || !/^device:[a-f0-9]{64}$/.test(key.name)) continue;
+    const data=await payloadForDevice(key.name.slice(7));
+    if (!data || Object.values(data).some(v=>typeof v!=='string')) throw new Error('invalid_fcm_data');
+    if (JSON.stringify(data).length>3500) throw new Error('fcm_data_too_large');
+    const result=await pushOne(accessToken,projectId,stored.token,data,fetchFn);
+    if(result==='sent') sent++;
+    if(result==='unregistered') await env.DEVICES.delete(key.name);
+  }
+  return {sent};
+}
