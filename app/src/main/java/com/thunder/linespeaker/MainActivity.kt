@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -14,8 +13,8 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 
+/** Only LINE Official Account notifications; no other apps and no screen OCR. */
 class MainActivity : Activity() {
-    private lateinit var info: TextView
     private lateinit var accessInfo: TextView
     private lateinit var voiceInfo: TextView
 
@@ -26,13 +25,19 @@ class MainActivity : Activity() {
             setPadding(30, 35, 30, 35)
         }
         layout.addView(TextView(this).apply {
-            text = "Thunder LINE Speaker"
-            textSize = 26f
+            text = "Thunder LINE OA Speaker"
+            textSize = 25f
         })
         layout.addView(TextView(this).apply {
-            text = "LINE แจ้งเตือนมา → มือถือพูดให้รู้ทันที\nแจ้งเตือนรูปภาพหรือสลิป: บอกว่ามีรูปหรือสลิปเข้ามา\nถ้าข้อความแจ้งยอดเงิน: อ่านเฉพาะยอด ไม่ตรวจสอบการโอน\nข้อความลูกค้า: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\n\nทำงานจากการแจ้งเตือน LINE ในเครื่อง ไม่ต้องเปลี่ยน Webhook หรือเชื่อม Thunder API\nหมายเหตุ: หาก LINE ไม่แสดงยอดในแจ้งเตือน แอปจะอ่านยอดจากรูปที่ซ่อนอยู่ไม่ได้"
+            text = "อ่านเฉพาะแจ้งเตือน LINE Official Account เท่านั้น\n" +
+                "ไม่อ่าน LINE ส่วนตัว ธนาคาร SMS หรือแอปอื่น\n\n" +
+                "ข้อความลูกค้า: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\n" +
+                "ข้อความแจ้งรูปหรือสลิป: พูดว่ามีรูป/สลิปเข้ามา\n" +
+                "ข้อความมียอดเงิน: อ่านยอดที่ปรากฏในแจ้งเตือน\n\n" +
+                "ไม่ตรวจสลิปซ้ำ ไม่ใช้ Thunder API ไม่แก้ Webhook เดิม"
             textSize = 16f
         })
+
         @Suppress("DEPRECATION")
         fun addSwitch(label: String, selected: Boolean, changed: (Boolean) -> Unit) {
             layout.addView(Switch(this).apply {
@@ -48,33 +53,38 @@ class MainActivity : Activity() {
                 setOnClickListener { pressed() }
             })
         }
-        addSwitch("อ่านเสียงเมื่อลูกค้าทัก LINE", Preferences.customers(this)) {
+
+        addSwitch("อ่านข้อความลูกค้า LINE OA", Preferences.customers(this)) {
             Preferences.setCustomers(this, it)
         }
-        addSwitch("อ่านเสียงแจ้งเตือนรูปภาพ/สลิป/ยอดจาก LINE", Preferences.payments(this)) {
+        addSwitch("อ่านแจ้งเตือนรูป สลิป และยอดเงินใน LINE OA", Preferences.payments(this)) {
             Preferences.setPayments(this, it)
         }
-        addSwitch("OCR ภาพจาก LINE เพิ่มเติม (ทางเลือก)", Preferences.screenOcr(this)) {
-            Preferences.setScreenOcr(this, it)
-        }
+
         accessInfo = TextView(this).apply {
             textSize = 17f
             setPadding(0, 20, 0, 8)
         }
         layout.addView(accessInfo)
-        addButton("ตรวจสถานะสิทธิ์อ่านแจ้งเตือน") {
+        addButton("ตรวจสิทธิ์อ่านแจ้งเตือน") {
             updateAccessStatus()
         }
-        addButton("อนุญาตอ่านการแจ้งเตือน LINE") {
+        addButton("อนุญาตอ่านแจ้งเตือน LINE OA") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        addButton("ทดสอบเสียงแจ้งเตือนรูปภาพ") {
+        addButton("ทดลองเสียงข้อความลูกค้า") {
             SpeechEngine.speak(
-                this, "มีรูปภาพส่งเข้ามาทาง LINE แล้วเด้อ",
-                "test-photo:" + System.currentTimeMillis(), 0
+                this, "สมหญิง ซื้อหวยฮานอย VIP",
+                "test-customer:" + System.currentTimeMillis(), 0
             )
         }
-        addButton("ทดสอบเสียงแจ้งยอดเงิน") {
+        addButton("ทดลองเสียงแจ้งสลิป") {
+            SpeechEngine.speak(
+                this, "มีสลิปส่งเข้ามาทาง LINE แล้วเด้อ",
+                "test-slip:" + System.currentTimeMillis(), 0
+            )
+        }
+        addButton("ทดลองเสียงแจ้งยอดเงิน") {
             SpeechEngine.speak(
                 this, "มีแจ้งเตือนยอด 180 บาทแล้วเด้อ",
                 "test-amount:" + System.currentTimeMillis(), 0
@@ -86,26 +96,10 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 12)
         }
         layout.addView(voiceInfo)
-        addButton("ตรวจสถานะเสียงและแจ้งเตือนล่าสุด") {
+        addButton("ตรวจสถานะแจ้งเตือนและเสียงล่าสุด") {
             voiceInfo.text = VoiceHealth.summary(this)
         }
-        addButton("อนุญาต OCR ภาพที่เปิดอยู่ใน LINE (ทางเลือก)") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-        addButton("เลือกภาพสลิปจากเครื่อง (ทางเลือก)") {
-            startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"
-                addCategory(Intent.CATEGORY_OPENABLE)
-            }, 101)
-        }
-        info = TextView(this).apply {
-            text = "เปิดสิทธิ์อ่านการแจ้งเตือนให้แอปก่อนใช้จริง หากเป็นรูปอย่างเดียวจะบอกว่ามีรูปส่งมา ไม่เดายอดเงิน"
-            textSize = 15f
-            setPadding(0, 24, 0, 0)
-        }
-        layout.addView(info)
         setContentView(ScrollView(this).apply { addView(layout) })
-        handleIncomingImage(intent)
     }
 
     override fun onResume() {
@@ -115,58 +109,18 @@ class MainActivity : Activity() {
     }
 
     private fun updateAccessStatus() {
-        val listener = ComponentName(this, LineNotificationService::class.java)
+        val component = ComponentName(this, LineNotificationService::class.java)
         val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             getSystemService(NotificationManager::class.java)
-                ?.isNotificationListenerAccessGranted(listener) == true
+                ?.isNotificationListenerAccessGranted(component) == true
         } else {
             Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-                ?.split(":")
-                ?.any { ComponentName.unflattenFromString(it) == listener } == true
+                ?.split(":")?.any { ComponentName.unflattenFromString(it) == component } == true
         }
         accessInfo.text = if (granted) {
-            "สิทธิ์อ่านแจ้งเตือน: อนุญาตแล้ว ✓"
+            "สิทธิ์อ่านแจ้งเตือน: อนุญาตแล้ว (แอปกรองเฉพาะ LINE OA)"
         } else {
-            "สิทธิ์อ่านแจ้งเตือน: ยังไม่ได้อนุญาต — กดปุ่มอนุญาตด้านล่าง"
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleIncomingImage(intent)
-    }
-
-    private fun handleIncomingImage(incoming: Intent?) {
-        if (incoming?.action != Intent.ACTION_SEND || !incoming.type.orEmpty().startsWith("image/")) return
-        @Suppress("DEPRECATION")
-        val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
-            incoming.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-        } else {
-            incoming.getParcelableExtra(Intent.EXTRA_STREAM)
-        }
-        if (uri != null) readImage(uri)
-    }
-
-    @Deprecated("Android platform image picker callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 101 && resultCode == RESULT_OK) {
-            data?.data?.let { readImage(it) }
-        }
-    }
-
-    private fun readImage(uri: Uri) {
-        info.text = "กำลังอ่านภาพ..."
-        ImageReader.fromUri(this, uri) { amount ->
-            runOnUiThread {
-                if (amount == null) {
-                    info.text = "ไม่พบยอดเงินที่อ่านได้ชัดเจน (OCR รองรับตัวเลขและอักษรละตินเป็นหลัก)"
-                } else {
-                    info.text = "พบตัวเลขยอดเงิน $amount บาท (ไม่ใช่การยืนยันโอนเงินจากธนาคาร)"
-                    SpeechEngine.speak(this, "พบยอดเงิน $amount บาทจากรูปภาพ", "shared:${System.currentTimeMillis()}", 0)
-                }
-            }
+            "สิทธิ์อ่านแจ้งเตือน: ยังไม่ได้อนุญาต"
         }
     }
 }
