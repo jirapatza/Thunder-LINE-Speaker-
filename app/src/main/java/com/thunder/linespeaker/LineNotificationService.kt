@@ -1,14 +1,22 @@
 package com.thunder.linespeaker
 
 import android.app.Notification
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.view.accessibility.AccessibilityManager
+import android.app.ActivityOptions
+import android.app.KeyguardManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.os.SystemClock
+import android.os.Build
+import android.os.PowerManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import java.security.MessageDigest
 
 class LineNotificationService : NotificationListenerService() {
     private val deduper = LineNoticeDeduper()
+    private var lastAutoOpenMs: Long? = null
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -73,7 +81,7 @@ class LineNotificationService : NotificationListenerService() {
         val slipVoice = Preferences.payments(this)
         val customerVoice = Preferences.customers(this)
 
-        for (item in incoming) {
+        for ((index, item) in incoming.withIndex()) {
             if (item.sender.isBlank() && item.body.isBlank() && !item.hasPicture) continue
             val alert = LineAnnouncementPolicy.choose(
                 sender = item.sender,
@@ -94,6 +102,10 @@ class LineNotificationService : NotificationListenerService() {
                 .digest(fingerprintSource.toByteArray(Charsets.UTF_8))
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
+
+            if (alert.kind == "customer" && !CustomerNoticeStore.accept(
+                    this, conversationTitle, item.sender, nowMs
+                )) continue
 
             VoiceHealth.receivedLineNotice(this)
             val speechKey = "line:" + sbn.key + ":" + digest
@@ -120,10 +132,70 @@ class LineNotificationService : NotificationListenerService() {
                 if (!imageAvailable) {
                     VoiceHealth.slipOcrStatus(this, "LINE OA แจ้งรูปภาพ แต่ Android ไม่แนบไฟล์ภาพให้แอปอ่าน")
                     SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+                    tryOpenImageChat(notification, index == incoming.lastIndex)
                 }
             } else {
                 SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
             }
+        }
+    }
+
+    private fun tryOpenImageChat(notification: Notification, latest: Boolean) {
+        if (!Preferences.autoOpenImage(this)) {
+            VoiceHealth.slipOcrStatus(this, "ไม่มีภาพแนบ และยังปิดตัวเลือกทดลองเปิดแชต")
+            return
+        }
+        if (!Preferences.screenSlipOcr(this)) {
+            VoiceHealth.slipOcrStatus(this, "ไม่มีภาพแนบ กรุณาเปิดตัวเลือกอ่านภาพหน้าจอ LINE OA")
+            return
+        }
+        val power = getSystemService(PowerManager::class.java) ?: return
+        val keyguard = getSystemService(KeyguardManager::class.java) ?: return
+        val manager = getSystemService(AccessibilityManager::class.java) ?: return
+        val component = ComponentName(this, LineOaScreenSlipService::class.java)
+        val accessibilityEnabled = manager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        ).any { info ->
+            val service = info.resolveInfo?.serviceInfo
+            service != null && ComponentName(service.packageName, service.name) == component
+        }
+        if (!accessibilityEnabled) {
+            VoiceHealth.slipOcrStatus(this, "กรุณาอนุญาต Accessibility สำหรับอ่านภาพ LINE OA")
+            return
+        }
+        if (!power.isInteractive || keyguard.isKeyguardLocked) {
+            VoiceHealth.slipOcrStatus(this, "เครื่องล็อกหรือปิดหน้าจอ เปิดแชตอัตโนมัติไม่ได้")
+            return
+        }
+        val action = notification.contentIntent ?: run {
+            VoiceHealth.slipOcrStatus(this, "แจ้งเตือน LINE OA ไม่มีปุ่มเปิดแชต กรุณาเปิดแชตเอง")
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (!ImageChatOpenPolicy.canOpen(
+                Preferences.autoOpenImage(this), Preferences.screenSlipOcr(this), accessibilityEnabled,
+                power.isInteractive, keyguard.isKeyguardLocked, latest, action.creatorPackage,
+                now, lastAutoOpenMs
+            )) return
+        lastAutoOpenMs = now
+        try {
+            // Android may reject background activity starts; sending an intent
+            // does not establish that the expected conversation was opened.
+            if (Build.VERSION.SDK_INT >= 34) {
+                val options = ActivityOptions.makeBasic().apply {
+                    setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    )
+                }
+                action.send(this, 0, null, null, null, null, options.toBundle())
+            } else {
+                action.send()
+            }
+            VoiceHealth.slipOcrStatus(this, "ส่งคำขอเปิดแชตแล้ว ตรวจหน้าจอ LINE OA ว่าเปิดสำเร็จ")
+        } catch (_: PendingIntent.CanceledException) {
+            VoiceHealth.slipOcrStatus(this, "เปิดแชตจากแจ้งเตือนไม่ได้ กรุณาเปิดแชตเอง")
+        } catch (_: SecurityException) {
+            VoiceHealth.slipOcrStatus(this, "Android ไม่อนุญาตให้เปิดแชต กรุณาเปิดแชตเอง")
         }
     }
 

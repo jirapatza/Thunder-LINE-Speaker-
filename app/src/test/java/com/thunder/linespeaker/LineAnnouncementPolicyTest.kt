@@ -48,11 +48,11 @@ class LineAnnouncementPolicyTest {
 
     @Test fun customerMessagesNeverReadLotteryPicks() {
         assertEquals(
-            "สมหญิง ซื้อหวยฮานอย VIP",
+            "เฮีย ซื้อหวยฮานอย VIP หน่อย",
             choose(sender = "สมหญิง", message = "ซื้อหวยฮานอย VIP 123 456")?.phrase
         )
         assertEquals(
-            "สมหญิง ทัก LINE มา",
+            "เฮีย ลูกค้าทักมาแล้ว",
             choose(sender = "สมหญิง", message = "สวัสดี")?.phrase
         )
     }
@@ -61,6 +61,10 @@ class LineAnnouncementPolicyTest {
         val result = choose(sender = "สมหญิง", message = "ซื้อหวยฮานอย 123 456")
         assertEquals("customer", result?.kind)
         assertNull(choose(sender = "สมหญิง", message = "บัญชี 1234567890", customers = false))
+    }
+
+    @Test fun numberOnlyMessageIsNotAnnounced() {
+        assertNull(choose(message = "123 456"))
     }
 
     @Test fun switchesWorkIndependently() {
