@@ -10,6 +10,16 @@ class SlipAmountParserTest {
         assertEquals("1250.5", SlipAmountParser.find("จำนวนเงิน: 1,250.50 บาท\nเลขอ้างอิง 823456781"))
     }
 
+    @Test fun readsTransferAndNotFeeFromKasikornStyleText() {
+        assertEquals("27", SlipAmountParser.find("โอนเงินสำเร็จ\nจำนวน:\n27.00 บาท\nค่าธรรมเนียม:\n0.00 บาท\nเลขที่รายการ: 016324224713"))
+    }
+
+    @Test fun refusesConflictingAmountsAndDoesNotBorrowFee() {
+        assertNull(SlipAmountParser.find("จำนวนเงิน 27.00 บาท\nจำนวนเงิน 50.00 บาท"))
+        assertNull(SlipAmountParser.find("จำนวนเงิน\nค่าธรรมเนียม 15.00 บาท"))
+        assertNull(SlipAmountParser.find("27.00 บาท\n50.00 บาท"))
+    }
+
     @Test fun readsEnglishSlipsAndCurrencyMark() {
         assertEquals("299.99", SlipAmountParser.find("Transfer amount THB 299.99"))
         assertEquals("80", SlipAmountParser.find("฿80.00"))
