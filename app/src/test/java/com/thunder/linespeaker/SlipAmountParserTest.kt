@@ -21,9 +21,16 @@ class SlipAmountParserTest {
         assertNull(SlipAmountParser.find("ค่าโอน 0 บาท"))
     }
 
+    @Test fun singleUnlabeledDecimalRequiresExplicitOptIn() {
+        assertNull(SlipAmountParser.find("180.00"))
+        assertEquals("180", SlipAmountParser.find("180.00", allowUnlabeledSingleDecimal = true))
+        assertNull(SlipAmountParser.find("180.00\n300.00", allowUnlabeledSingleDecimal = true))
+    }
+
     @Test fun rejectsZeroNegativeOrExcessiveAmounts() {
         assertNull(SlipAmountParser.find("ยอดเงิน 0.00 บาท"))
         assertNull(SlipAmountParser.find("ยอดเงิน -50 บาท"))
         assertNull(SlipAmountParser.find("ยอดเงิน 1000000000 บาท"))
+        assertNull(SlipAmountParser.find("ยอดเงิน 1234567890"))
     }
 }
