@@ -60,6 +60,43 @@ class LineNoticeBatchSelectorTest {
         assertEquals(listOf("boundary", "allowed future"), selected.map { it.body })
     }
 
+    @Test fun twoDistinctTextMessagesAtTheSameMillisecondStaySeparate() {
+        val now = 1_000_000L
+        val selected = LineNoticeBatchSelector.fresh(
+            listOf(item("ข้อความ A", now), item("ข้อความ B", now)),
+            now
+        )
+        assertEquals(listOf("ข้อความ A", "ข้อความ B"), selected.map { it.body })
+    }
+
+    @Test fun unknownTimestampBeforeStaleKnownLastDoesNotReplayOldMessage() {
+        val now = 1_000_000L
+        val selected = LineNoticeBatchSelector.fresh(
+            listOf(item("ไม่ทราบเวลา", 0L), item("เก่าเกิน", now - 300_000L)),
+            now
+        )
+        assertTrue(selected.isEmpty())
+    }
+
+    @Test fun unknownTimestampBeforeFreshKnownLastStillReadsLatest() {
+        val now = 1_000_000L
+        val selected = LineNoticeBatchSelector.fresh(
+            listOf(item("ไม่ทราบเวลา", 0L), item("สดใหม่", now - 1000L)),
+            now
+        )
+        assertEquals(listOf("สดใหม่"), selected.map { it.body })
+    }
+
+    @Test fun twoSeparateImageMessagesWithIdenticalTimeAreNotMerged() {
+        val now = 1_000_000L
+        val selected = LineNoticeBatchSelector.fresh(
+            listOf(item("รูปหนึ่ง", now, picture = true),
+                item("รูปสอง", now, picture = true)),
+            now
+        )
+        assertEquals(listOf("รูปหนึ่ง", "รูปสอง"), selected.map { it.body })
+    }
+
     @Test fun capBatchSizeAndHandleEmpty() {
         val now = 1_000_000L
         val all = (1..50).map { item("msg" + it, now - 100 + it) }
