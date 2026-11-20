@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Thunder LINE OA Speaker</string>
 
+    <string name="line_oa_ocr_description">อ่านข้อความยอดเงินจากรูปที่เปิดแสดงในแอป LINE Official Account เท่านั้น เมื่อตั้งค่าเปิดใช้งาน ไม่เก็บหรือส่งภาพออกนอกเครื่อง</string>
 </resources>
