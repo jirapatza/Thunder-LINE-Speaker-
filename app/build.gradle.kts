@@ -6,8 +6,8 @@ android {
         applicationId = "com.thunder.linespeaker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "0.9-dev"
+        versionCode = 10
+        versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "0.10-dev"
 
     }
     compileOptions {
@@ -36,5 +36,6 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 dependencies {
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation("junit:junit:4.13.2")
 }
