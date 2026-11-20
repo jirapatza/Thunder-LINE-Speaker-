@@ -48,7 +48,9 @@ internal object LineNoticeBatchSelector {
             val matching = selected.indexOfLast { previous ->
                 previous.sender == item.sender &&
                     previous.timestampMs == item.timestampMs &&
-                    previous.hasPicture != item.hasPicture
+                    previous.hasPicture != item.hasPicture &&
+                    (previous.body.isBlank() || item.body.isBlank() ||
+                        previous.body == item.body)
             }
             if (matching < 0) {
                 selected.add(item)
