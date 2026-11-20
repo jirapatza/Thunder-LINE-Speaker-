@@ -3,6 +3,8 @@
     <!-- Notification Access is granted at OS level. The listener immediately
          discards every package except com.linecorp.lineoa. -->
     <queries>
+        <!-- Visibility only for the official LINE OA app; no broad package query. -->
+        <package android:name="com.linecorp.lineoa" />
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
     <application
