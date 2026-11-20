@@ -9,17 +9,17 @@ import java.math.BigDecimal
 internal object SlipAmountParser {
     private const val NUMBER = "([0-9]{1,3}(?:,[0-9]{3})+(?:\\.[0-9]{1,2})?|[0-9]{1,8}(?:\\.[0-9]{1,2})?)"
     private val labeled = Regex(
-        "(?:จำนวนเงิน|ยอดเงิน|ยอดโอน|ยอดชำระ|เงินจำนวน|จำนวน|โอนเงิน|transfer\\\\s*amount|amount|total|฿)\\\\s*[:：=]?\\\\s*(?:฿|THB)?\\\\s*$NUMBER",
+        "(?:จำนวนเงิน|ยอดเงิน|ยอดโอน|ยอดชำระ|เงินจำนวน|จำนวน|โอนเงิน|transfer\\s*amount|amount|total|฿)\\s*[:：=]?\\s*(?:฿|THB)?\\s*$NUMBER",
         RegexOption.IGNORE_CASE
     )
-    private val suffixed = Regex("$NUMBER\\\\s*(?:บาท|THB|฿)", RegexOption.IGNORE_CASE)
+    private val suffixed = Regex("$NUMBER\\s*(?:บาท|THB|฿)", RegexOption.IGNORE_CASE)
     private val ignoreLine = Regex(
         "ค่าธรรมเนียม|fee|คงเหลือ|balance|เลขที่บัญชี|account|เลขอ้างอิง|reference",
         RegexOption.IGNORE_CASE
     )
 
     fun find(text: String): String? {
-        val normalized = text.replace("\\r", "").replace(" ", " ").replace("฿", "฿")
+        val normalized = text.replace('\r', ' ').replace(" ", " ")
         val lines = normalized.lines().map { it.trim() }.filter { it.isNotEmpty() }
         // Number may follow the "amount" heading on the next OCR line.
         for (i in lines.indices) {
