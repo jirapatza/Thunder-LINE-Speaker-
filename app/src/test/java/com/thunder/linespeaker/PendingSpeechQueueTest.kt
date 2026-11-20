@@ -35,6 +35,26 @@ class PendingSpeechQueueTest {
         q.markAccepted(3000)
         assertNull(q.peek())
     }
+    @Test fun stalePendingMessagesExpireWithoutBeingMarkedAsSpoken() {
+        val q = PendingSpeechQueue()
+        assertTrue(q.offer("old", "line:old", 1_000L, 90_000L))
+        assertTrue(q.offer("recent", "line:recent", 130_000L, 90_000L))
+        assertEquals(1, q.discardStale(135_000L, 120_000L))
+        assertEquals("recent", q.peek()?.phrase)
+        assertEquals(0, q.discardStale(250_000L, 120_000L))
+        assertEquals("recent", q.peek()?.phrase)
+        assertEquals(1, q.discardStale(250_001L, 120_000L))
+        assertNull(q.peek())
+        assertTrue(q.offer("repeated old event", "line:old", 250_002L, 90_000L))
+    }
+
+    @Test fun clockRollbackDiscardsFutureQueueEntries() {
+        val q = PendingSpeechQueue()
+        assertTrue(q.offer("future", "future", 10_000L, 90_000L))
+        assertEquals(1, q.discardStale(9_999L, 120_000L))
+        assertNull(q.peek())
+    }
+
     @Test fun memoryBoundPreventsUnboundedBacklog() {
         val q = PendingSpeechQueue(capacity = 2)
         assertTrue(q.offer("a", "a", 1, 90000))
