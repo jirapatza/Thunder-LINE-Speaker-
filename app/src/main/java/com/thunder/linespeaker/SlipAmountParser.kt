@@ -18,7 +18,9 @@ internal object SlipAmountParser {
         RegexOption.IGNORE_CASE
     )
 
-    fun find(text: String): String? {
+    private val standaloneDecimal = Regex("(?<![0-9.,-])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{1,7})\\.[0-9]{2}(?![0-9.])")
+
+    fun find(text: String, allowUnlabeledSingleDecimal: Boolean = false): String? {
         val normalized = text.replace('\r', ' ').replace(" ", " ")
         val lines = normalized.lines().map { it.trim() }.filter { it.isNotEmpty() }
         // Number may follow the "amount" heading on the next OCR line.
@@ -33,6 +35,18 @@ internal object SlipAmountParser {
             for (match in suffixed.findAll(line)) {
                 valid(match.groups[1]?.value, line, match.groups[1]?.range?.first ?: 0)?.let { return it }
             }
+        }
+        if (allowUnlabeledSingleDecimal) {
+            // Thai text is not reliably recognized by the Latin OCR model.
+            // Only use a single unambiguous x.xx number when the user explicitly
+            // selected a slip image or the notification itself mentions a slip.
+            val values = lines.filterNot { ignoreLine.containsMatchIn(it) }
+                .flatMap { line ->
+                    standaloneDecimal.findAll(line).mapNotNull { match ->
+                        valid(match.value, line, match.range.first)
+                    }.toList()
+                }.distinct()
+            return values.singleOrNull()
         }
         return null
     }
