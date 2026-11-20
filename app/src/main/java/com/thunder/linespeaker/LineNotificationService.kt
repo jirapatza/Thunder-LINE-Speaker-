@@ -1,12 +1,14 @@
 package com.thunder.linespeaker
 
 import android.app.Notification
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.security.MessageDigest
 
 class LineNotificationService : NotificationListenerService() {
     private val deduper = LineNoticeDeduper()
@@ -18,77 +20,90 @@ class LineNotificationService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         VoiceHealth.listenerDisconnected()
+        // This request is explicitly permitted by the Android platform after
+        // disconnection. It cannot override OEM process-killing policies.
+        try {
+            requestRebind(ComponentName(this, LineNotificationService::class.java))
+        } catch (_: RuntimeException) {
+            // The user may have revoked access or Android may refuse rebind.
+        }
         super.onListenerDisconnected()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Listen to the installed LINE app only. Leave the LINE OA webhook alone.
         if (sbn.packageName != "jp.naver.line.android") return
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
         val extras = notification.extras
-        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val conversationTitle = extras.getCharSequence(Notification.EXTRA_TITLE)
+            ?.toString().orEmpty().trim()
         val directText = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
-            ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
+            ?: extras.getCharSequence(Notification.EXTRA_TEXT))
+            ?.toString().orEmpty().trim()
         val messages = try {
             extras.getParcelableArray(Notification.EXTRA_MESSAGES)?.let {
                 Notification.MessagingStyle.Message.getMessagesFromBundleArray(it)
             }.orEmpty()
-        } catch (_: Exception) {
+        } catch (_: RuntimeException) {
             emptyList()
         }
-        // Prefer the newest message's sender over a group/conversation title.
-        val latest = messages.lastOrNull()
-        val messageSender = latest?.senderPerson?.name?.toString()?.trim().orEmpty()
-        val effectiveSender = messageSender.ifBlank { sender }
-        val messageText = latest?.text?.toString().orEmpty().trim()
-        val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
-            ?.lastOrNull()?.toString().orEmpty().trim()
-        val body = messageText.ifBlank { directText }.ifBlank { textLines }
-        // Do not label a new text message as a picture because an earlier
-        // item in the same MessagingStyle notification contained a photo.
-        val hasPicture = latest?.dataMimeType?.startsWith("image/") == true ||
-            (messages.isEmpty() && (
-                extras.containsKey(Notification.EXTRA_PICTURE) ||
+
+        val nowMs = System.currentTimeMillis()
+        val rawItems = if (messages.isNotEmpty()) {
+            messages.map { item ->
+                val who = item.senderPerson?.name?.toString()?.trim().orEmpty()
+                    .ifBlank { conversationTitle }
+                LineNoticeItem(
+                    sender = who,
+                    body = item.text?.toString().orEmpty().trim(),
+                    hasPicture = item.dataMimeType?.startsWith("image/") == true,
+                    timestampMs = item.timestamp
+                )
+            }
+        } else {
+            val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                ?.lastOrNull()?.toString().orEmpty().trim()
+            val body = directText.ifBlank { lines }
+            val picture = extras.containsKey(Notification.EXTRA_PICTURE) ||
                 extras.containsKey(Notification.EXTRA_PICTURE_ICON)
-            ))
-        if (effectiveSender.isBlank() && body.isBlank() && !hasPicture) return
+            listOf(LineNoticeItem(conversationTitle, body, picture, nowMs))
+        }
+        val incoming = LineNoticeBatchSelector.fresh(rawItems, nowMs)
+        if (incoming.isEmpty()) return
 
         val slipVoice = Preferences.payments(this)
-        val alert = LineAnnouncementPolicy.choose(
-            sender = effectiveSender,
-            message = body,
-            hasPicture = hasPicture,
-            customerVoice = Preferences.customers(this),
-            slipVoice = slipVoice
-        )
-        val wantsOcr = slipVoice && hasPicture && Preferences.screenOcr(this)
-        if (alert == null && !wantsOcr) return
+        val customerVoice = Preferences.customers(this)
+        val wantsOcr = slipVoice && Preferences.screenOcr(this)
 
-        // Notification callbacks can fire many times for one LINE message.
-        // A MessagingStyle timestamp separates two identical new messages.
-        val fingerprint = listOf(
-            effectiveSender,
-            body,
-            latest?.timestamp?.toString().orEmpty(),
-            hasPicture.toString(),
-            alert?.kind.orEmpty()
-        ).joinToString("|")
-        if (!deduper.accept(sbn.key, fingerprint, SystemClock.elapsedRealtime())) return
-        VoiceHealth.receivedLineNotice(this)
-
-        if (alert != null) {
-            SpeechEngine.speak(
-                this, alert.phrase,
-                "line:" + sbn.key + ":" + fingerprint, 30_000L
+        for ((index, item) in incoming.withIndex()) {
+            if (item.sender.isBlank() && item.body.isBlank() && !item.hasPicture) continue
+            val alert = LineAnnouncementPolicy.choose(
+                sender = item.sender,
+                message = item.body,
+                hasPicture = item.hasPicture,
+                customerVoice = customerVoice,
+                slipVoice = slipVoice
             )
-        }
+            val scanPicture = wantsOcr && item.hasPicture && index == incoming.lastIndex
+            if (alert == null && !scanPicture) continue
 
-        // Optional OCR only when LINE actually exposed a picture payload.
-        // Many LINE notifications contain just "ส่งรูปภาพ" and have no bitmap.
-        if (wantsOcr) {
-            scanNotificationPicture(notification, "picture:" + sbn.key)
+            // Fingerprint the message, not the entire bundled notification.
+            // Never retain the original chat text in deduplication keys.
+            val fingerprintSource = listOf(
+                item.sender, item.body, item.timestampMs.toString(),
+                item.hasPicture.toString(), alert?.kind.orEmpty()
+            ).joinToString("|")
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(fingerprintSource.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
+
+            VoiceHealth.receivedLineNotice(this)
+            if (alert != null) {
+                SpeechEngine.speak(this, alert.phrase, "line:" + sbn.key + ":" + digest, 30_000L)
+            }
+            if (scanPicture) scanNotificationPicture(notification, "picture:" + sbn.key + ":" + digest)
         }
     }
 
