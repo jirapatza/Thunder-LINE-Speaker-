@@ -58,12 +58,12 @@ internal object LineAnnouncementPolicy {
         if (!customerVoice || body.isBlank() || pictureMessage || mentionsSlip || fromThunderLabel) {
             return null
         }
-        val safeName = name.ifBlank { "ลูกค้า" }
+        if (!body.any { it.isLetter() }) return null
         val lottery = lotteries.firstOrNull { body.contains(it, ignoreCase = true) }
-        val phrase = if ((body.contains("หวย") || body.contains("สั่ง")) && lottery != null) {
-            "$safeName ซื้อหวย$lottery"
+        val phrase = if (lottery != null) {
+            "เฮีย ซื้อหวย${lottery} หน่อย"
         } else {
-            "$safeName ทัก LINE มา"
+            "เฮีย ลูกค้าทักมาแล้ว"
         }
         return Alert(phrase, "customer")
     }
