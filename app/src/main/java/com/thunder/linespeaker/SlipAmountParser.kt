@@ -56,6 +56,9 @@ internal object SlipAmountParser {
         // Reject partial matches inside a phone number or account reference.
         if (start > 0 && (source[start - 1].isDigit() ||
                 source[start - 1] == '-' || source[start - 1] == '.')) return null
+        val after = start + candidate.length
+        if (after < source.length &&
+            (source[after].isDigit() || source[after] == ',' || source[after] == '.')) return null
         val amount = candidate.replace(",", "").toBigDecimalOrNull() ?: return null
         if (amount <= BigDecimal.ZERO || amount > BigDecimal("100000000")) return null
         return amount.stripTrailingZeros().toPlainString()
