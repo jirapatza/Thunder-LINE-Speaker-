@@ -40,7 +40,8 @@ internal object SlipAmountParser {
     private fun valid(raw: String?, source: String, start: Int): String? {
         val candidate = raw ?: return null
         // Reject partial matches inside a phone number or account reference.
-        if (start > 0 && source[start - 1].isDigit()) return null
+        if (start > 0 && (source[start - 1].isDigit() ||
+                source[start - 1] == '-' || source[start - 1] == '.')) return null
         val amount = candidate.replace(",", "").toBigDecimalOrNull() ?: return null
         if (amount <= BigDecimal.ZERO || amount > BigDecimal("100000000")) return null
         return amount.stripTrailingZeros().toPlainString()
