@@ -23,7 +23,7 @@ class LineOaScreenSlipService : AccessibilityService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
             !Preferences.screenSlipOcr(this) || !Preferences.payments(this)) return
         if (!LineSourcePolicy.accepts(event?.packageName?.toString())) return
-        val type = event.eventType
+        val type = event?.eventType ?: return
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
             type != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
