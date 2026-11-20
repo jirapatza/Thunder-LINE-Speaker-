@@ -6,7 +6,7 @@ package com.thunder.linespeaker
  * verify rapid incoming LINE messages without an emulator.
  */
 internal class PendingSpeechQueue(private val capacity: Int = 200) {
-    data class Entry(val phrase: String, val key: String, val dedupeMs: Long)
+    data class Entry(val phrase: String, val key: String, val dedupeMs: Long, val queuedAtMs: Long)
 
     private val pending = ArrayDeque<Entry>()
     private val accepted = LinkedHashMap<String, Long>()
@@ -16,8 +16,21 @@ internal class PendingSpeechQueue(private val capacity: Int = 200) {
         val last = accepted[key]
         if (last != null && nowMs >= last && nowMs - last < dedupeMs) return false
         if (pending.any { it.key == key } || pending.size >= capacity) return false
-        pending.addLast(Entry(phrase, key, dedupeMs))
+        pending.addLast(Entry(phrase, key, dedupeMs, nowMs))
         return true
+    }
+
+    /**
+     * A TTS engine may become ready long after a LINE event. Avoid speaking
+     * hours-old messages if the phone temporarily had no Thai speech engine.
+     * Unaccepted expired entries must not be recorded as successfully spoken.
+     */
+    fun discardStale(nowMs: Long, maxAgeMs: Long): Int {
+        val before = pending.size
+        pending.removeAll {
+            nowMs < it.queuedAtMs || nowMs - it.queuedAtMs > maxAgeMs
+        }
+        return before - pending.size
     }
 
     fun peek(): Entry? = pending.firstOrNull()
