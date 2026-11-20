@@ -65,7 +65,7 @@ class LineOaScreenSlipService : AccessibilityService() {
                             VoiceHealth.slipOcrStatus(this@LineOaScreenSlipService, "จับภาพ LINE OA ไม่สำเร็จ")
                             return
                         }
-                        SlipImageReader.fromBitmap(image) { amount ->
+                        SlipImageReader.fromBitmap(image, allowUnlabeled = false) { amount ->
                             image.recycle()
                             busy = false
                             if (amount != null && Preferences.screenSlipOcr(this@LineOaScreenSlipService)
