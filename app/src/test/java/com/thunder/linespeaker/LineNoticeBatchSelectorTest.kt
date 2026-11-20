@@ -87,6 +87,16 @@ class LineNoticeBatchSelectorTest {
         assertEquals(listOf("สดใหม่"), selected.map { it.body })
     }
 
+    @Test fun unrelatedCaptionAndImageAtSameTimeStaySeparate() {
+        val now = 1_000_000L
+        val selected = LineNoticeBatchSelector.fresh(
+            listOf(item("ลูกค้าทัก LINE", now),
+                item("รูปอีกข้อความ", now, picture = true)),
+            now
+        )
+        assertEquals(listOf("ลูกค้าทัก LINE", "รูปอีกข้อความ"), selected.map { it.body })
+    }
+
     @Test fun twoSeparateImageMessagesWithIdenticalTimeAreNotMerged() {
         val now = 1_000_000L
         val selected = LineNoticeBatchSelector.fresh(
