@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -32,12 +33,10 @@ class MainActivity : Activity() {
             textSize = 25f
         })
         layout.addView(TextView(this).apply {
-            text = "อ่านเฉพาะแจ้งเตือน LINE Official Account เท่านั้น\n" +
-                "ไม่อ่าน LINE ส่วนตัว ธนาคาร SMS หรือแอปอื่น\n\n" +
-                "ข้อความลูกค้า: พูดชื่อและชื่อหวย ไม่อ่านเลขที่สั่ง\n" +
-                "ข้อความแจ้งรูปหรือสลิป: พูดว่ามีรูป/สลิปเข้ามา\n" +
-                "ข้อความมียอดเงิน: อ่านยอดที่ปรากฏในแจ้งเตือน\n\n" +
-                "ไม่ตรวจสลิปซ้ำ ไม่ใช้ Thunder API ไม่แก้ Webhook เดิม"
+            text = "อ่านข้อความแจ้งเตือนเฉพาะ LINE Official Account\n" +
+                "แจ้งยอดจากข้อความที่เห็นได้ หรืออ่านยอดในรูปสลิปถ้า Android แนบภาพมา\n" +
+                "ถ้าแจ้งเตือนมีแค่คำว่า 'ส่งรูปภาพ' ต้องเปิดรูปใน LINE OA หรือแชร์รูปให้แอปอ่าน\n" +
+                "ไม่เปิดดูแอปอื่น ไม่ตรวจสอบการโอน และไม่แก้ Thunder Webhook"
             textSize = 16f
         })
 
@@ -64,6 +63,19 @@ class MainActivity : Activity() {
             Preferences.setPayments(this, it)
         }
 
+        addSwitch(
+            "อ่านยอดจากรูปที่เปิดใน LINE OA (ต้องอนุญาต Accessibility)",
+            Preferences.screenSlipOcr(this)
+        ) { Preferences.setScreenSlipOcr(this, it) }
+        addButton("อนุญาตอ่านภาพที่เปิดอยู่ใน LINE OA (ทางเลือก)") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        addButton("เลือกภาพสลิปจากเครื่องเพื่ออ่านยอด") {
+            startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }, 201)
+        }
         sourceInfo = TextView(this).apply {
             textSize = 16f
             setPadding(0, 18, 0, 4)
@@ -117,6 +129,51 @@ class MainActivity : Activity() {
             voiceInfo.text = VoiceHealth.summary(this)
         }
         setContentView(ScrollView(this).apply { addView(layout) })
+        handleSharedImage(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSharedImage(intent)
+    }
+
+    @Deprecated("Android system file chooser result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 201 && resultCode == RESULT_OK) {
+            data?.data?.let { readSlipImage(it) }
+        }
+    }
+
+    private fun handleSharedImage(incoming: Intent?) {
+        if (incoming?.action != Intent.ACTION_SEND ||
+            !incoming.type.orEmpty().startsWith("image/")) return
+        val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+        uri?.let { readSlipImage(it) }
+    }
+
+    private fun readSlipImage(uri: Uri) {
+        VoiceHealth.slipOcrStatus(this, "กำลังอ่านรูปที่เลือกเอง")
+        SlipImageReader.fromUri(this, uri) { amount ->
+            runOnUiThread {
+                if (amount == null) {
+                    VoiceHealth.slipOcrStatus(this, "ไม่พบยอดที่อ่านได้ในรูปที่เลือก")
+                } else {
+                    VoiceHealth.slipOcrStatus(this, "อ่านยอดจากรูปที่เลือกได้")
+                    SpeechEngine.speak(
+                        this, "พบยอดในรูปสลิป $amount บาทแล้วเด้อ",
+                        "selected-slip:" + System.currentTimeMillis(), 0
+                    )
+                }
+                voiceInfo.text = VoiceHealth.summary(this)
+            }
+        }
     }
 
     override fun onResume() {
