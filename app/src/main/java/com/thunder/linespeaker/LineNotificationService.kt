@@ -96,7 +96,34 @@ class LineNotificationService : NotificationListenerService() {
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
 
             VoiceHealth.receivedLineNotice(this)
-            SpeechEngine.speak(this, alert.phrase, "line:" + sbn.key + ":" + digest, 30_000L)
+            val speechKey = "line:" + sbn.key + ":" + digest
+            if (alert.kind == "picture" || alert.kind == "slip") {
+                val attachedUri = messages.lastOrNull { message ->
+                    message.timestamp == item.timestampMs &&
+                        message.dataMimeType?.startsWith("image/") == true
+                }?.dataUri
+                val imageAvailable = try {
+                    SlipImageReader.fromNotification(this, notification, attachedUri) { amount ->
+                        if (amount == null) {
+                            VoiceHealth.slipOcrStatus(this, "Android แนบภาพมา แต่ OCR ไม่พบยอดเงินที่อ่านได้")
+                            SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+                        } else {
+                            VoiceHealth.slipOcrStatus(this, "OCR อ่านยอดจากภาพ LINE OA ที่แนบมาได้")
+                            SpeechEngine.speak(
+                                this, "พบยอดในรูปสลิป $amount บาทแล้วเด้อ", speechKey, 30_000L
+                            )
+                        }
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+                if (!imageAvailable) {
+                    VoiceHealth.slipOcrStatus(this, "LINE OA แจ้งรูปภาพ แต่ Android ไม่แนบไฟล์ภาพให้แอปอ่าน")
+                    SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+                }
+            } else {
+                SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+            }
         }
     }
 
