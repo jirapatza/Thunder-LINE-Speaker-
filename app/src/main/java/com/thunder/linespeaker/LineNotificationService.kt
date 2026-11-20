@@ -103,7 +103,7 @@ class LineNotificationService : NotificationListenerService() {
                         message.dataMimeType?.startsWith("image/") == true
                 }?.dataUri
                 val imageAvailable = try {
-                    SlipImageReader.fromNotification(this, notification, attachedUri) { amount ->
+                    SlipImageReader.fromNotification(this, notification, attachedUri, allowUnlabeled = alert.kind == "slip") { amount ->
                         if (amount == null) {
                             VoiceHealth.slipOcrStatus(this, "Android แนบภาพมา แต่ OCR ไม่พบยอดเงินที่อ่านได้")
                             SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
