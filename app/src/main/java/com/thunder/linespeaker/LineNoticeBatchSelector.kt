@@ -26,9 +26,27 @@ internal object LineNoticeBatchSelector {
         // A timestamp of 0 means we cannot safely distinguish older history.
         // Only announce the latest in this situation instead of the full batch.
         if (tail.any { it.timestampMs <= 0 }) return listOf(tail.last())
-        return tail.filter {
+        val recent = tail.filter {
             it.timestampMs <= nowMs + maxFutureMs &&
                 it.timestampMs >= nowMs - maxAgeMs
         }
+        // Android MessagingStyle can represent image + text of one message
+        // as two items with the same sender and timestamp. Speak it once.
+        val grouped = LinkedHashMap<Pair<String, Long>, LineNoticeItem>()
+        for (item in recent) {
+            val id = Pair(item.sender, item.timestampMs)
+            val previous = grouped[id]
+            grouped[id] = if (previous == null) {
+                item
+            } else {
+                val text = when {
+                    previous.body.isBlank() -> item.body
+                    item.body.isBlank() || previous.body == item.body -> previous.body
+                    else -> previous.body + " " + item.body
+                }
+                previous.copy(body = text, hasPicture = previous.hasPicture || item.hasPicture)
+            }
+        }
+        return grouped.values.toList()
     }
 }
