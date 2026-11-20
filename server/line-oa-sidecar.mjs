@@ -4,6 +4,7 @@
  * An existing handler must intentionally forward signed events to this Worker.
  */
 import { registerDevice, sendPaymentToDevices, pushConfigured } from './fcm-delivery.mjs';
+import { imageRelayConfigured, serveSlipImage, processImageRelayJob, deliverPendingImages } from './image-relay.mjs';
 
 const IMAGE_LIMIT = 4_194_304;
 const WEBHOOK_LIMIT = 512_000;
@@ -36,6 +37,7 @@ export async function verifySignature(secret, body, supplied) {
   return constantTimeEquals(await hmacBase64(secret, body), supplied);
 }
 function requirements(env) {
+  if (env.SLIP_PROCESSING_MODE === 'image_relay') return imageRelayConfigured(env);
   return Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN && env.THUNDER_API_KEY &&
     env.SLIP_QUEUE?.sendBatch && env.RESULT_CACHE?.get && env.RESULT_CACHE?.put && pushConfigured(env));
 }
@@ -180,6 +182,10 @@ export async function deliverPendingResults(env, pageLimit = 100, maxPages = 5) 
 export default {
   async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
+    if (path === '/slip-image') {
+      if (env.SLIP_PROCESSING_MODE !== 'image_relay') return json({error:'not_found'},404);
+      return serveSlipImage(request, env);
+    }
     if (request.method === 'GET' && path === '/') return new Response('LINE OA Slip Speaker พร้อมทำงาน (รอกำหนดค่าระบบเชื่อมต่อ)', {headers:{'content-type':'text/plain; charset=utf-8'}});
     if (request.method === 'GET' && path === '/health') {
       let pairedDevices = 0;
@@ -189,6 +195,7 @@ export default {
       }
       return json({
         service: 'line-oa-slip-speaker',
+        processingMode: env.SLIP_PROCESSING_MODE === 'image_relay' ? 'image_relay' : 'verified_thunder',
         // Configured credentials do NOT mean the original LINE webhook is
         // forwarding events, or that a vivo handset has successfully spoken.
         status: requirements(env) && pairedDevices > 0 ? 'ready_for_live_test' : 'needs_configuration',
@@ -205,7 +212,8 @@ export default {
       // A user may pair after a slip was verified. Drain pending verifications
       // in the background rather than dropping the money announcement.
       if (response.ok && ctx?.waitUntil) {
-        ctx.waitUntil(deliverPendingResults(env).catch(() => {
+        ctx.waitUntil((env.SLIP_PROCESSING_MODE === 'image_relay'
+          ? deliverPendingImages(env) : deliverPendingResults(env)).catch(() => {
           // A later registration / queue retry can resume unsent results.
         }));
       }
@@ -231,6 +239,13 @@ export default {
     }
   },
   async queue(batch, env) {
+    if (env.SLIP_PROCESSING_MODE === 'image_relay') {
+      for (const job of batch.messages) {
+        try { await processImageRelayJob(job,env); }
+        catch { job.retry(); }
+      }
+      return;
+    }
     for (const job of batch.messages) {
       try {
         if (!requirements(env)) throw new Error('worker_not_configured');
