@@ -32,12 +32,13 @@ test('signed forwarded image -> queue -> FCM ticket -> LINE image, without Thund
   }),env,ctx);
   assert.equal(registration.status,200);
   await Promise.all(background);
-  let imageUrl;
+  let imageUrl, failFcm = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
     calls.push(String(url));
     if (url === 'https://oauth2.googleapis.com/token') return Response.json({access_token:'test-oauth-access-token',expires_in:3600});
     if (url === 'https://fcm.googleapis.com/v1/projects/relay-integration-test/messages:send') {
+      if (failFcm) return Response.json({error:{message:'simulated outage'}},{status:503});
       const message = JSON.parse(options.body).message;
       assert.equal(message.token, token);
       assert.equal(message.data.type,'slip_image_ready');
@@ -70,6 +71,19 @@ test('signed forwarded image -> queue -> FCM ticket -> LINE image, without Thund
     await consume();
     assert.equal(ack,2);
     assert.equal(calls.filter(url => url.includes('messages:send')).length,1);
+    assert.equal(calls.some(url => url.includes('thunder.in.th')),false);
+    // A temporary FCM outage must retry the job, not mark it delivered.
+    const secondBody = JSON.stringify({events:[{type:'message',timestamp:Date.now(),message:{type:'image',id:'987654321'}}]});
+    const secondSignature = createHmac('sha256',env.FORWARD_SECRET).update(secondBody).digest('base64');
+    assert.equal((await worker.fetch(new Request('https://worker.example/forwarded-webhook',{
+      method:'POST',headers:{'x-relay-signature':secondSignature},body:secondBody,
+    }),env,ctx)).status,202);
+    failFcm = true;
+    const failingJob = jobs.shift();
+    await worker.queue({messages:[{body:failingJob.body,ack(){ack++;},retry(){retry++;}}]},env);
+    assert.equal(retry,1);
+    assert.equal(ack,2);
+    assert.equal((await env.RESULT_CACHE.get('image-relay:987654321','json')).delivered,false);
     assert.equal(calls.some(url => url.includes('thunder.in.th')),false);
   } finally { globalThis.fetch = originalFetch; }
 });
