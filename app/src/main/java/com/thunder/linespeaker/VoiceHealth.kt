@@ -36,6 +36,14 @@ internal object VoiceHealth {
             .apply()
     }
 
+    fun slipOcrStatus(context: Context, description: String) {
+        // Status string is an enum-like fixed description, never the OCR data.
+        prefs(context).edit()
+            .putString("slip_ocr_status", description)
+            .putLong("last_slip_ocr", System.currentTimeMillis())
+            .apply()
+    }
+
     fun speechStarted(context: Context) {
         prefs(context).edit().putLong("last_speech_start", System.currentTimeMillis()).apply()
     }
@@ -65,6 +73,7 @@ internal object VoiceHealth {
             "เชื่อมต่อล่าสุด: " + time("last_listener_connect") + "\n" +
             "แจ้งเตือน LINE OA ที่รับล่าสุด: " + time("last_line_notice") + "\n" +
             "สถานะเสียงล่าสุด: $status\n" +
+            "สถานะอ่านยอดจากภาพ: " + p.getString("slip_ocr_status", "ยังไม่ได้ลองอ่านภาพ") + "\n" +
             "เริ่มพูดล่าสุด: " + time("last_speech_start") + "\n" +
             "พูดจบล่าสุด: " + time("last_speech_finish") + "\n" +
             "หมายเหตุ: สถานะพูดจบมาจากเครื่อง TTS ไม่ยืนยันว่าลำโพงมีเสียงจริง"
