@@ -1,6 +1,8 @@
 package com.thunder.linespeaker
 
 import android.app.Notification
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.view.accessibility.AccessibilityManager
 import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.app.PendingIntent
@@ -14,7 +16,7 @@ import java.security.MessageDigest
 
 class LineNotificationService : NotificationListenerService() {
     private val deduper = LineNoticeDeduper()
-    private var lastAutoOpenMs = 0L
+    private var lastAutoOpenMs: Long? = null
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -79,7 +81,7 @@ class LineNotificationService : NotificationListenerService() {
         val slipVoice = Preferences.payments(this)
         val customerVoice = Preferences.customers(this)
 
-        for (item in incoming) {
+        for ((index, item) in incoming.withIndex()) {
             if (item.sender.isBlank() && item.body.isBlank() && !item.hasPicture) continue
             val alert = LineAnnouncementPolicy.choose(
                 sender = item.sender,
@@ -130,7 +132,7 @@ class LineNotificationService : NotificationListenerService() {
                 if (!imageAvailable) {
                     VoiceHealth.slipOcrStatus(this, "LINE OA แจ้งรูปภาพ แต่ Android ไม่แนบไฟล์ภาพให้แอปอ่าน")
                     SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
-                    tryOpenImageChat(notification)
+                    tryOpenImageChat(notification, index == incoming.lastIndex)
                 }
             } else {
                 SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
@@ -138,15 +140,24 @@ class LineNotificationService : NotificationListenerService() {
         }
     }
 
-    private fun tryOpenImageChat(notification: Notification) {
-        if (!Preferences.autoOpenImage(this) || !Preferences.screenSlipOcr(this)) return
+    private fun tryOpenImageChat(notification: Notification, latest: Boolean) {
         val power = getSystemService(PowerManager::class.java) ?: return
         val keyguard = getSystemService(KeyguardManager::class.java) ?: return
-        if (!power.isInteractive || keyguard.isKeyguardLocked) return
+        val manager = getSystemService(AccessibilityManager::class.java) ?: return
+        val component = ComponentName(this, LineOaScreenSlipService::class.java)
+        val accessibilityEnabled = manager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        ).any { info ->
+            val service = info.resolveInfo?.serviceInfo
+            service != null && ComponentName(service.packageName, service.name) == component
+        }
         val action = notification.contentIntent ?: return
-        if (!LineSourcePolicy.accepts(action.creatorPackage)) return
         val now = SystemClock.elapsedRealtime()
-        if (lastAutoOpenMs != 0L && now - lastAutoOpenMs < 15_000L) return
+        if (!ImageChatOpenPolicy.canOpen(
+                Preferences.autoOpenImage(this), Preferences.screenSlipOcr(this), accessibilityEnabled,
+                power.isInteractive, keyguard.isKeyguardLocked, latest, action.creatorPackage,
+                now, lastAutoOpenMs
+            )) return
         lastAutoOpenMs = now
         try {
             // Android may reject background activity starts; sending an intent
