@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Thunder LINE OA Speaker</string>
-    <string name="accessibility_description">อ่านข้อความจากรูปที่กำลังแสดงบนหน้าจอ LINE เพื่ออ่านยอดเงินเป็นเสียงภาษาไทย โดยไม่บันทึกหรือส่งภาพออกนอกเครื่อง</string>
+
 </resources>
