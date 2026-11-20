@@ -1,10 +1,6 @@
 package com.thunder.linespeaker
 
-import android.app.Notification
 import android.content.ComponentName
-import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
-import android.os.Build
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -31,7 +27,8 @@ class LineNotificationService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != "jp.naver.line.android") return
+        // Android sends callbacks for many apps; do not inspect their extras.
+        if (!LineSourcePolicy.accepts(sbn.packageName)) return
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
@@ -74,9 +71,8 @@ class LineNotificationService : NotificationListenerService() {
 
         val slipVoice = Preferences.payments(this)
         val customerVoice = Preferences.customers(this)
-        val wantsOcr = slipVoice && Preferences.screenOcr(this)
 
-        for ((index, item) in incoming.withIndex()) {
+        for (item in incoming) {
             if (item.sender.isBlank() && item.body.isBlank() && !item.hasPicture) continue
             val alert = LineAnnouncementPolicy.choose(
                 sender = item.sender,
@@ -85,8 +81,7 @@ class LineNotificationService : NotificationListenerService() {
                 customerVoice = customerVoice,
                 slipVoice = slipVoice
             )
-            val scanPicture = wantsOcr && item.hasPicture && index == incoming.lastIndex
-            if (alert == null && !scanPicture) continue
+            if (alert == null) continue
 
             // Fingerprint the message, not the entire bundled notification.
             // Never retain the original chat text in deduplication keys.
@@ -103,49 +98,7 @@ class LineNotificationService : NotificationListenerService() {
             if (alert != null) {
                 SpeechEngine.speak(this, alert.phrase, "line:" + sbn.key + ":" + digest, 30_000L)
             }
-            if (scanPicture) scanNotificationPicture(notification, "picture:" + sbn.key + ":" + digest)
         }
     }
 
-    private fun scanNotificationPicture(notification: Notification, key: String) {
-        val extras = notification.extras
-        @Suppress("DEPRECATION")
-        val bitmap: Bitmap? = if (Build.VERSION.SDK_INT >= 33) {
-            extras.getParcelable(Notification.EXTRA_PICTURE, Bitmap::class.java)
-        } else {
-            extras.getParcelable(Notification.EXTRA_PICTURE)
-        }
-        val drawable = if (Build.VERSION.SDK_INT >= 33) {
-            extras.getParcelable(Notification.EXTRA_PICTURE_ICON, android.graphics.drawable.Icon::class.java)
-                ?.loadDrawable(this)
-        } else null
-        val image = bitmap ?: (drawable as? BitmapDrawable)?.bitmap
-        if (image == null) {
-            // Some MessagingStyle apps attach a readable image Uri instead of a BigPicture.
-            // LINE is not required to expose one; unreadable Uris are ignored safely.
-            if (Build.VERSION.SDK_INT >= 30) {
-                val parcels = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
-                if (parcels != null) {
-                    val messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(parcels)
-                    for (message in messages.takeLast(2)) {
-                        val uri = message.dataUri
-                        if (uri != null && message.dataMimeType?.startsWith("image/") == true) {
-                            ImageReader.fromUri(this, uri) { amount ->
-                                if (amount != null && Preferences.payments(this)) {
-                                    SpeechEngine.speak(this, "พบยอดเงิน $amount บาทจากรูปภาพ", "$key:$amount")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return
-        }
-        ImageReader.fromBitmap(image) { amount ->
-            if (amount != null && Preferences.payments(this)) {
-                // OCR reads a picture, not bank confirmation. Never claim verification from image alone.
-                SpeechEngine.speak(this, "พบยอดเงิน $amount บาทจากรูปภาพ", "$key:$amount")
-            }
-        }
-    }
 }
