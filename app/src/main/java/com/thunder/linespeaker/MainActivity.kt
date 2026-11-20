@@ -160,7 +160,7 @@ class MainActivity : Activity() {
 
     private fun readSlipImage(uri: Uri) {
         VoiceHealth.slipOcrStatus(this, "กำลังอ่านรูปที่เลือกเอง")
-        SlipImageReader.fromUri(this, uri) { amount ->
+        SlipImageReader.fromUri(this, uri, allowUnlabeled = true) { amount ->
             runOnUiThread {
                 if (amount == null) {
                     VoiceHealth.slipOcrStatus(this, "ไม่พบยอดที่อ่านได้ในรูปที่เลือก")
