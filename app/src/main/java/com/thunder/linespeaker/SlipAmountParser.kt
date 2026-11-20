@@ -23,19 +23,29 @@ internal object SlipAmountParser {
     fun find(text: String, allowUnlabeledSingleDecimal: Boolean = false): String? {
         val normalized = text.replace('\r', ' ').replace(" ", " ")
         val lines = normalized.lines().map { it.trim() }.filter { it.isNotEmpty() }
-        // Number may follow the "amount" heading on the next OCR line.
+        // Accept one distinct labeled amount only. A screen may contain several
+        // slips or chat messages, so conflicting candidates are ambiguous.
+        val labeledValues = mutableSetOf<String>()
         for (i in lines.indices) {
             if (ignoreLine.containsMatchIn(lines[i])) continue
-            val slice = lines.subList(i, minOf(i + 2, lines.size)).joinToString(" ")
-            val match = labeled.find(slice) ?: continue
-            valid(match.groups[1]?.value, slice, match.groups[1]?.range?.first ?: 0)?.let { return it }
+            val next = lines.getOrNull(i + 1)
+            val slice = if (next != null && !ignoreLine.containsMatchIn(next))
+                lines[i] + " " + next else lines[i]
+            for (match in labeled.findAll(slice)) {
+                valid(match.groups[1]?.value, slice, match.groups[1]?.range?.first ?: 0)
+                    ?.let { labeledValues.add(it) }
+            }
         }
+        if (labeledValues.isNotEmpty()) return labeledValues.singleOrNull()
+        val currencyValues = mutableSetOf<String>()
         for (line in lines) {
             if (ignoreLine.containsMatchIn(line)) continue
             for (match in suffixed.findAll(line)) {
-                valid(match.groups[1]?.value, line, match.groups[1]?.range?.first ?: 0)?.let { return it }
+                valid(match.groups[1]?.value, line, match.groups[1]?.range?.first ?: 0)
+                    ?.let { currencyValues.add(it) }
             }
         }
+        if (currencyValues.isNotEmpty()) return currencyValues.singleOrNull()
         if (allowUnlabeledSingleDecimal) {
             // Thai text is not reliably recognized by the Latin OCR model.
             // Only use a single unambiguous x.xx number when the user explicitly
