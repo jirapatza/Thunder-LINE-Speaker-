@@ -2,6 +2,8 @@ package com.thunder.linespeaker
 
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
+import android.content.pm.PackageManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
@@ -16,6 +18,7 @@ import android.widget.TextView
 /** Only LINE Official Account notifications; no other apps and no screen OCR. */
 class MainActivity : Activity() {
     private lateinit var accessInfo: TextView
+    private lateinit var sourceInfo: TextView
     private lateinit var voiceInfo: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,6 +64,20 @@ class MainActivity : Activity() {
             Preferences.setPayments(this, it)
         }
 
+        sourceInfo = TextView(this).apply {
+            textSize = 16f
+            setPadding(0, 18, 0, 4)
+        }
+        layout.addView(sourceInfo)
+        addButton("เปิดการตั้งค่าแจ้งเตือน LINE OA") {
+            try {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, LineSourcePolicy.OA_PACKAGE)
+                })
+            } catch (_: ActivityNotFoundException) {
+                sourceInfo.text = "เปิดการตั้งค่าการแจ้งเตือน LINE OA โดยตรงไม่ได้บนเครื่องนี้"
+            }
+        }
         accessInfo = TextView(this).apply {
             textSize = 17f
             setPadding(0, 20, 0, 8)
@@ -104,8 +121,31 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (::sourceInfo.isInitialized) updateLineOaStatus()
         if (::accessInfo.isInitialized) updateAccessStatus()
         if (::voiceInfo.isInitialized) voiceInfo.text = VoiceHealth.summary(this)
+    }
+
+    private fun updateLineOaStatus() {
+        val present = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageInfo(
+                    LineSourcePolicy.OA_PACKAGE,
+                    PackageManager.PackageInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(LineSourcePolicy.OA_PACKAGE, 0)
+            }
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+        sourceInfo.text = if (present) {
+            "LINE OA: พบแอป Official Account บนเครื่องแล้ว"
+        } else {
+            "LINE OA: ไม่พบแอป Official Account บนเครื่อง — จะไม่มีแจ้งเตือนให้อ่าน"
+        }
     }
 
     private fun updateAccessStatus() {
