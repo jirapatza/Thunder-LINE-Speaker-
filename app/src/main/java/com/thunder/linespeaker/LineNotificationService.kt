@@ -67,7 +67,7 @@ class LineNotificationService : NotificationListenerService() {
             val body = directText.ifBlank { lines }
             val picture = extras.containsKey(Notification.EXTRA_PICTURE) ||
                 extras.containsKey(Notification.EXTRA_PICTURE_ICON)
-            listOf(LineNoticeItem(conversationTitle, body, picture, nowMs))
+            listOf(LineNoticeItem(conversationTitle, body, picture, 0L))
         }
         val incoming = LineNoticeBatchSelector.fresh(rawItems, nowMs)
         if (incoming.isEmpty()) return
