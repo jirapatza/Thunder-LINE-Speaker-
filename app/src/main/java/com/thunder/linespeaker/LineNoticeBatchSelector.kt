@@ -25,28 +25,45 @@ internal object LineNoticeBatchSelector {
         val tail = items.takeLast(maxBatchSize)
         // A timestamp of 0 means we cannot safely distinguish older history.
         // Only announce the latest in this situation instead of the full batch.
-        if (tail.any { it.timestampMs <= 0 }) return listOf(tail.last())
+        if (tail.any { it.timestampMs <= 0 }) {
+            val last = tail.last()
+            // An item with a missing timestamp is impossible to order against
+            // old history. Read only that item. However, if the last item does
+            // have a timestamp, it must still be fresh.
+            return if (last.timestampMs <= 0L ||
+                (last.timestampMs >= nowMs - maxAgeMs &&
+                    last.timestampMs <= nowMs + maxFutureMs)
+            ) listOf(last) else emptyList()
+        }
         val recent = tail.filter {
             it.timestampMs <= nowMs + maxFutureMs &&
                 it.timestampMs >= nowMs - maxAgeMs
         }
-        // Android MessagingStyle can represent image + text of one message
-        // as two items with the same sender and timestamp. Speak it once.
-        val grouped = LinkedHashMap<Pair<String, Long>, LineNoticeItem>()
+        val selected = ArrayList<LineNoticeItem>(recent.size)
         for (item in recent) {
-            val id = Pair(item.sender, item.timestampMs)
-            val previous = grouped[id]
-            grouped[id] = if (previous == null) {
-                item
+            // A caption and its media attachment may arrive as separate
+            // MessagingStyle parts at the same instant. Merge only a text
+            // part with a media part, NOT two distinct text messages that
+            // happen to share the same millisecond timestamp.
+            val matching = selected.indexOfLast { previous ->
+                previous.sender == item.sender &&
+                    previous.timestampMs == item.timestampMs &&
+                    previous.hasPicture != item.hasPicture
+            }
+            if (matching < 0) {
+                selected.add(item)
             } else {
-                val text = when {
+                val previous = selected[matching]
+                val combinedText = when {
                     previous.body.isBlank() -> item.body
                     item.body.isBlank() || previous.body == item.body -> previous.body
                     else -> previous.body + " " + item.body
                 }
-                previous.copy(body = text, hasPicture = previous.hasPicture || item.hasPicture)
+                selected[matching] = previous.copy(
+                    body = combinedText, hasPicture = true
+                )
             }
         }
-        return grouped.values.toList()
+        return selected
     }
 }
