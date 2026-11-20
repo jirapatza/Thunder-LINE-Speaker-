@@ -9,7 +9,9 @@ class LineNoticeDeduperTest {
         val deduper = LineNoticeDeduper()
         assertTrue(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 1_000L))
         assertFalse(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 2_000L))
-        assertTrue(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 122_000L))
+        assertFalse(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 122_000L))
+        assertFalse(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 190_999L))
+        assertTrue(deduper.accept("line-chat-A", "สมหญิง|ส่งรูปภาพ|1000", 191_000L))
     }
 
     @Test fun identicalMessagesWithDifferentLineTimestampsBothAnnounce() {
