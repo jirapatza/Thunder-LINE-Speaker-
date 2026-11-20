@@ -17,6 +17,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var info: TextView
     private lateinit var accessInfo: TextView
+    private lateinit var voiceInfo: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +80,15 @@ class MainActivity : Activity() {
                 "test-amount:" + System.currentTimeMillis(), 0
             )
         }
+        voiceInfo = TextView(this).apply {
+            text = VoiceHealth.summary(this@MainActivity)
+            textSize = 15f
+            setPadding(0, 12, 0, 12)
+        }
+        layout.addView(voiceInfo)
+        addButton("ตรวจสถานะเสียงและแจ้งเตือนล่าสุด") {
+            voiceInfo.text = VoiceHealth.summary(this)
+        }
         addButton("อนุญาต OCR ภาพที่เปิดอยู่ใน LINE (ทางเลือก)") {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
@@ -101,6 +111,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::accessInfo.isInitialized) updateAccessStatus()
+        if (::voiceInfo.isInitialized) voiceInfo.text = VoiceHealth.summary(this)
     }
 
     private fun updateAccessStatus() {
