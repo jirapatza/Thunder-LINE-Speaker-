@@ -1,14 +1,20 @@
 package com.thunder.linespeaker
 
 import android.app.Notification
+import android.app.ActivityOptions
+import android.app.KeyguardManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.os.SystemClock
+import android.os.Build
+import android.os.PowerManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import java.security.MessageDigest
 
 class LineNotificationService : NotificationListenerService() {
     private val deduper = LineNoticeDeduper()
+    private var lastAutoOpenMs = 0L
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -124,10 +130,42 @@ class LineNotificationService : NotificationListenerService() {
                 if (!imageAvailable) {
                     VoiceHealth.slipOcrStatus(this, "LINE OA แจ้งรูปภาพ แต่ Android ไม่แนบไฟล์ภาพให้แอปอ่าน")
                     SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+                    tryOpenImageChat(notification)
                 }
             } else {
                 SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
             }
+        }
+    }
+
+    private fun tryOpenImageChat(notification: Notification) {
+        if (!Preferences.autoOpenImage(this) || !Preferences.screenSlipOcr(this)) return
+        val power = getSystemService(PowerManager::class.java) ?: return
+        val keyguard = getSystemService(KeyguardManager::class.java) ?: return
+        if (!power.isInteractive || keyguard.isKeyguardLocked) return
+        val action = notification.contentIntent ?: return
+        if (!LineSourcePolicy.accepts(action.creatorPackage)) return
+        val now = SystemClock.elapsedRealtime()
+        if (lastAutoOpenMs != 0L && now - lastAutoOpenMs < 15_000L) return
+        lastAutoOpenMs = now
+        try {
+            // Android may reject background activity starts; sending an intent
+            // does not establish that the expected conversation was opened.
+            if (Build.VERSION.SDK_INT >= 34) {
+                val options = ActivityOptions.makeBasic().apply {
+                    setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    )
+                }
+                action.send(this, 0, null, null, null, null, options.toBundle())
+            } else {
+                action.send()
+            }
+            VoiceHealth.slipOcrStatus(this, "ส่งคำขอเปิดแชตแล้ว ตรวจหน้าจอ LINE OA ว่าเปิดสำเร็จ")
+        } catch (_: PendingIntent.CanceledException) {
+            VoiceHealth.slipOcrStatus(this, "เปิดแชตจากแจ้งเตือนไม่ได้ กรุณาเปิดแชตเอง")
+        } catch (_: SecurityException) {
+            VoiceHealth.slipOcrStatus(this, "Android ไม่อนุญาตให้เปิดแชต กรุณาเปิดแชตเอง")
         }
     }
 
