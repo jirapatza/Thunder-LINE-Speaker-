@@ -23,6 +23,10 @@ class VerifiedSpeechOutputTest {
         context.getSharedPreferences("speaker_settings", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("verified_payment_spoken", Context.MODE_PRIVATE).edit().clear().commit()
         assertTrue(Preferences.saveSpeech(context, SpeechType.VERIFIED, true, "ยอดยืนยัน {ยอดเงิน} บาท"))
+        // Robolectric resets its TTS shadow between test classes, while our
+        // process-wide SpeechEngine singleton may still hold the old instance.
+        SpeechEngine::class.java.getDeclaredMethod("reset", Context::class.java, String::class.java)
+            .apply { isAccessible = true }.invoke(SpeechEngine, context, "test reset")
         ShadowTextToSpeech.addLanguageAvailability(Locale.forLanguageTag("th-TH"))
         val service = Robolectric.buildService(LineSlipPushService::class.java).create().get()
         fun event(id: String, type: String, amount: String) = RemoteMessage.Builder("sender").setData(mapOf(
