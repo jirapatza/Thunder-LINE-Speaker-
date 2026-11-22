@@ -34,11 +34,17 @@ class VerifiedSpeechOutputTest {
             "eventTime" to System.currentTimeMillis().toString()
         )).build()
 
-        service.onMessageReceived(event("501", "payment_matched", "260.00"))
+        val listener = Robolectric.buildService(LineNotificationService::class.java).create().get()
+        listener.onListenerConnected()
         val tts = ShadowTextToSpeech.getLastTextToSpeechInstance()
         assertNotNull(tts)
         val shadow = shadowOf(tts)
         shadow.onInitListener.onInit(TextToSpeech.SUCCESS)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.spokenTextList.isEmpty())
+
+        service.onMessageReceived(event("501", "payment_matched", "260.00"))
+        assertSame(tts, ShadowTextToSpeech.getLastTextToSpeechInstance())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals("ยอดยืนยัน 260 บาท", shadow.lastSpokenText)
         val spokenCount = shadow.spokenTextList.size

@@ -13,6 +13,7 @@ class LineNotificationService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         VoiceHealth.listenerConnected(this)
+        SpeechEngine.prepare(this)
     }
 
     override fun onListenerDisconnected() {
@@ -33,6 +34,8 @@ class LineNotificationService : NotificationListenerService() {
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
+        val nowMs = System.currentTimeMillis()
+        VoiceHealth.receivedLineNotice(this, sbn.postTime, nowMs)
         val extras = notification.extras
         val conversationTitle = extras.getCharSequence(Notification.EXTRA_TITLE)
             ?.toString().orEmpty().trim()
@@ -47,7 +50,6 @@ class LineNotificationService : NotificationListenerService() {
             emptyList()
         }
 
-        val nowMs = System.currentTimeMillis()
         val rawItems = if (messages.isNotEmpty()) {
             messages.map { item ->
                 val who = item.senderPerson?.name?.toString()?.trim().orEmpty()
@@ -95,7 +97,6 @@ class LineNotificationService : NotificationListenerService() {
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
 
-            VoiceHealth.receivedLineNotice(this)
             val speechKey = "line:" + sbn.key + ":" + alert.kind
             val type = when {
                 LineAnnouncementPolicy.isPicture(item.body, item.hasPicture) && slipVoice -> SpeechType.PICTURE

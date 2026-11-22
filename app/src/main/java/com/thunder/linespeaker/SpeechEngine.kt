@@ -25,6 +25,15 @@ object SpeechEngine {
     private var ready = false
     private var generation = 0L
     private var utteranceSequence = 0L
+    private val queuedTimes = LinkedHashMap<String, Long>()
+
+    @Synchronized
+    internal fun prepare(context: Context) {
+        if (engine == null) initialize(context.applicationContext)
+    }
+
+    private fun takeQueuedTime(id: String): Long? =
+        synchronized(queuedTimes) { queuedTimes.remove(id) }
 
     @Synchronized
     fun speak(context: Context, phrase: String, key: String, dedupeMs: Long = 90_000L) {
@@ -78,7 +87,12 @@ object SpeechEngine {
             )
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String) {
-                    VoiceHealth.speechStarted(context)
+                    val delay = takeQueuedTime(utteranceId)?.let { SystemClock.elapsedRealtime() - it }
+                    VoiceHealth.speechStarted(context, delay)
+                }
+
+                override fun onStop(utteranceId: String, interrupted: Boolean) {
+                    takeQueuedTime(utteranceId)
                 }
 
                 override fun onDone(utteranceId: String) {
@@ -86,10 +100,12 @@ object SpeechEngine {
                 }
 
                 override fun onError(utteranceId: String) {
+                    takeQueuedTime(utteranceId)
                     VoiceHealth.speechFailed(context, "เครื่องเสียงอ่านไม่สำเร็จ")
                 }
 
                 override fun onError(utteranceId: String, errorCode: Int) {
+                    takeQueuedTime(utteranceId)
                     VoiceHealth.speechFailed(context, "TTS รหัส $errorCode")
                 }
             })
@@ -108,12 +124,17 @@ object SpeechEngine {
         pending.discardStale(SystemClock.elapsedRealtime(), 120_000L)
         while (ready) {
             val next = pending.peek() ?: return
+            val id = "thunder-" + (++utteranceSequence)
+            synchronized(queuedTimes) {
+                queuedTimes[id] = next.queuedAtMs
+                if (queuedTimes.size > 200) queuedTimes.remove(queuedTimes.keys.first())
+            }
             val result = try {
                 tts.speak(
                     next.phrase,
                     TextToSpeech.QUEUE_ADD,
                     null,
-                    "thunder-" + (++utteranceSequence)
+                    id
                 )
             } catch (_: RuntimeException) {
                 TextToSpeech.ERROR
@@ -132,6 +153,7 @@ object SpeechEngine {
     private fun reset(context: Context, reason: String) {
         ready = false
         generation++
+        synchronized(queuedTimes) { queuedTimes.clear() }
         val old = engine
         engine = null
         try {
