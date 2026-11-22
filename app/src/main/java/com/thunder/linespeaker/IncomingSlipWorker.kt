@@ -83,14 +83,11 @@ class IncomingSlipWorker(context: Context, parameters: WorkerParameters) :
             if (recent.contains(id)) return Result.success()
             cache.edit().putString("ids", (recent + id).takeLast(150).joinToString(",")).apply()
         }
-        if (amount == null) {
-            VoiceHealth.slipOcrStatus(applicationContext, "ได้รูปจาก LINE OA แต่ OCR ไม่พบยอดที่เชื่อถือได้")
-            SpeechEngine.speak(applicationContext, "มีรูปสลิปส่งเข้ามา แต่ยังอ่านยอดเงินไม่สำเร็จ",
-                "image-relay:" + id, 600_000L)
-        } else {
-            VoiceHealth.slipOcrStatus(applicationContext, "อ่านยอดจากรูปสลิป LINE OA ผ่านเครื่องสำเร็จ")
-            SpeechEngine.speak(applicationContext, "พบยอดในรูปสลิป " + amount + " บาทแล้วเด้อ",
-                "image-relay:" + id, 600_000L)
+        VoiceHealth.slipOcrStatus(applicationContext,
+            if (amount == null) "ได้รูปจาก LINE OA แต่ OCR ไม่พบยอดที่เชื่อถือได้"
+            else "อ่านภาพสำเร็จ แต่ยอดจาก OCR ไม่ใช่ผลตรวจยืนยัน")
+        Preferences.speech(applicationContext, SpeechType.PICTURE)?.let { phrase ->
+            SpeechEngine.speak(applicationContext, phrase, "image-relay:" + id, 600_000L)
         }
         return Result.success()
     }

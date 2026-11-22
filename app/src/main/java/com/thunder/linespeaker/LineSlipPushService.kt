@@ -24,6 +24,22 @@ class LineSlipPushService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
         val data = message.data
+        if (data["type"] == "payment_matched") {
+            val amount = PaymentAnnouncementPolicy.confirmedAmount(
+                PaymentAnnouncementPolicy.Source.VERIFIED_FCM, data["type"], data["eventId"],
+                data["amount"], data["eventTime"]
+            ) ?: return
+            val phrase = Preferences.speech(this, SpeechType.VERIFIED, amount) ?: return
+            val id = data["eventId"] ?: return
+            val cache = getSharedPreferences("verified_payment_spoken", MODE_PRIVATE)
+            synchronized(LineSlipPushService::class.java) {
+                val recent = cache.getString("ids", "").orEmpty().split(",").filter { it.isNotBlank() }
+                if (recent.contains(id)) return
+                if (!cache.edit().putString("ids", (recent + id).takeLast(150).joinToString(",")).commit()) return
+            }
+            SpeechEngine.speak(this, phrase, "verified-payment:$id", 600_000L)
+            return
+        }
         if (!Preferences.payments(this) || data["type"] != "slip_image_ready") return
         val id = data["eventId"] ?: return
         if (!id.matches(Regex("^[0-9]{1,32}$"))) return

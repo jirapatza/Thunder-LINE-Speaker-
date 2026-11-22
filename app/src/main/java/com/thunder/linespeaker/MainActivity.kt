@@ -1,6 +1,7 @@
 package com.thunder.linespeaker
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
@@ -17,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 /** Only LINE Official Account notifications; no other apps and no screen OCR. */
 class MainActivity : Activity() {
@@ -60,6 +62,7 @@ class MainActivity : Activity() {
             })
         }
 
+        addButton("ตั้งค่าเสียงพูด") { showSpeechSettings() }
         addSwitch("อ่านข้อความลูกค้า LINE OA", Preferences.customers(this)) {
             Preferences.setCustomers(this, it)
         }
@@ -170,6 +173,57 @@ class MainActivity : Activity() {
         }
         setContentView(ScrollView(this).apply { addView(layout) })
         handleSharedImage(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun showSpeechSettings() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
+        }
+        val labels = mapOf(
+            SpeechType.CUSTOMER to "ลูกค้าทักมา",
+            SpeechType.PICTURE to "ลูกค้าส่งรูป",
+            SpeechType.VERIFIED to "Thunder ตรวจสลิปผ่าน"
+        )
+        for (type in SpeechType.entries) {
+            val toggle = Switch(this).apply {
+                text = labels.getValue(type)
+                isChecked = Preferences.speechEnabled(this@MainActivity, type)
+            }
+            val input = EditText(this).apply {
+                setText(Preferences.speechText(this@MainActivity, type))
+                setSingleLine(false)
+                contentDescription = "คำพูด " + labels.getValue(type)
+            }
+            container.addView(toggle)
+            container.addView(input)
+            if (type == SpeechType.PICTURE) container.addView(TextView(this).apply {
+                text = "รูปภาพไม่ใช่หลักฐานยืนยันว่าเงินเข้าจริง"
+            })
+            if (type == SpeechType.VERIFIED) container.addView(TextView(this).apply {
+                text = "ใส่ {ยอดเงิน} ในข้อความ ห้ามใส่ตัวเลขอื่น ระบบจะพูดเฉพาะผลตรวจผ่านที่รับได้จริง"
+            })
+            container.addView(Button(this).apply {
+                text = "ทดสอบเสียง: " + labels.getValue(type)
+                setOnClickListener {
+                    val sample = SpeechSettings.render(type, true, input.text.toString(),
+                        if (type == SpeechType.VERIFIED) java.math.BigDecimal("260") else null)
+                    if (sample == null) Toast.makeText(this@MainActivity, "กรุณาตรวจข้อความและ {ยอดเงิน}", Toast.LENGTH_LONG).show()
+                    else SpeechEngine.speak(this@MainActivity, sample, "settings-test:" + System.currentTimeMillis(), 0)
+                }
+            })
+            container.addView(Button(this).apply {
+                text = "บันทึก: " + labels.getValue(type)
+                setOnClickListener {
+                    val saved = Preferences.saveSpeech(this@MainActivity, type, toggle.isChecked, input.text.toString())
+                    Toast.makeText(this@MainActivity, if (saved) "บันทึกแล้ว" else "ข้อความว่าง ยาวเกินไป หรือรูปแบบยอดเงินไม่ถูกต้อง", Toast.LENGTH_LONG).show()
+                }
+            })
+        }
+        val scroll = ScrollView(this).apply { addView(container) }
+        AlertDialog.Builder(this).setTitle("ตั้งค่าเสียงพูด").setView(scroll)
+            .setPositiveButton("ปิด", null).setOnDismissListener { recreate() }.show()
     }
 
     override fun onNewIntent(intent: Intent) {

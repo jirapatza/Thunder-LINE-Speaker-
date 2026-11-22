@@ -71,12 +71,8 @@ class LineOaScreenSlipService : AccessibilityService() {
                             if (amount != null && Preferences.screenSlipOcr(this@LineOaScreenSlipService)
                                 && Preferences.payments(this@LineOaScreenSlipService)) {
                                 VoiceHealth.slipOcrStatus(this@LineOaScreenSlipService, "อ่านยอดจากภาพที่เปิดใน LINE OA ได้")
-                                SpeechEngine.speak(
-                                    this@LineOaScreenSlipService,
-                                    "พบยอดในภาพ LINE OA $amount บาทแล้วเด้อ",
-                                    "visible-oa-amount:$amount",
-                                    120_000L
-                                )
+                                // Screen OCR is not a verified payment event; do not speak the amount.
+
                             } else {
                                 VoiceHealth.slipOcrStatus(this@LineOaScreenSlipService, "ภาพที่เปิดอยู่ไม่พบยอดเงินที่อ่านได้")
                             }

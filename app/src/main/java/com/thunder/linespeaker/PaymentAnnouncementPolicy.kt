@@ -25,7 +25,8 @@ internal object PaymentAnnouncementPolicy {
         val eventTime = eventTimeText?.toLongOrNull() ?: return null
         if (eventTime < nowMs - 10 * 60_000L ||
             eventTime > nowMs + 60_000L) return null
-        val amount = amountText?.toBigDecimalOrNull() ?: return null
+        if (amountText == null || !Regex("^[0-9]{1,9}(\\.[0-9]{1,2})?$").matches(amountText)) return null
+        val amount = amountText.toBigDecimalOrNull() ?: return null
         if (amount <= BigDecimal.ZERO || amount > BigDecimal("100000000")) return null
         return amount
     }
