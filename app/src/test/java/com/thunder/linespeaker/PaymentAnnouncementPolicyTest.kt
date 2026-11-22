@@ -37,7 +37,7 @@ class PaymentAnnouncementPolicyTest {
         for (id in listOf("", "invalid-id", "1".repeat(33), null)) {
             assertNull(amount(id = id))
         }
-        for (value in listOf("0", "-1", "100000000.01", "foo", "", null)) {
+        for (value in listOf("0", "-1", "100000000.01", "foo", "", "1e2", "12.345", null)) {
             assertNull(amount(value = value))
         }
     }

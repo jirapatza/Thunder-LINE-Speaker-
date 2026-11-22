@@ -23,6 +23,9 @@ internal object LineAnnouncementPolicy {
         "รัฐบาล", "หุ้น"
     )
 
+    fun isPicture(message: String, hasPicture: Boolean): Boolean = hasPicture ||
+        pictureHints.any { message.contains(it, ignoreCase = true) }
+
     fun choose(
         sender: String,
         message: String,
@@ -34,10 +37,10 @@ internal object LineAnnouncementPolicy {
         val body = message.trim()
         val fromThunderLabel = name.contains("Thunder", ignoreCase = true)
         val mentionsSlip = slipHints.any { body.contains(it, ignoreCase = true) }
-        val pictureMessage = hasPicture ||
-            pictureHints.any { body.contains(it, ignoreCase = true) }
+        val pictureMessage = isPicture(body, hasPicture)
 
         if (slipVoice) {
+            if (pictureMessage) return Alert("มีรูปภาพส่งเข้ามาทาง LINE แล้วเด้อ", "picture")
             // Never infer a receipt of money. Only say a LINE message mentions
             // an amount, and require contextual words to avoid reading picks.
             if (fromThunderLabel || mentionsSlip ||

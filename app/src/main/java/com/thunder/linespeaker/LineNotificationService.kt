@@ -13,6 +13,7 @@ class LineNotificationService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         VoiceHealth.listenerConnected(this)
+        SpeechEngine.prepare(this)
     }
 
     override fun onListenerDisconnected() {
@@ -33,6 +34,8 @@ class LineNotificationService : NotificationListenerService() {
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
+        val nowMs = System.currentTimeMillis()
+        VoiceHealth.receivedLineNotice(this, sbn.postTime, nowMs)
         val extras = notification.extras
         val conversationTitle = extras.getCharSequence(Notification.EXTRA_TITLE)
             ?.toString().orEmpty().trim()
@@ -47,7 +50,6 @@ class LineNotificationService : NotificationListenerService() {
             emptyList()
         }
 
-        val nowMs = System.currentTimeMillis()
         val rawItems = if (messages.isNotEmpty()) {
             messages.map { item ->
                 val who = item.senderPerson?.name?.toString()?.trim().orEmpty()
@@ -95,35 +97,15 @@ class LineNotificationService : NotificationListenerService() {
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             if (!deduper.accept(sbn.key, digest, SystemClock.elapsedRealtime())) continue
 
-            VoiceHealth.receivedLineNotice(this)
-            val speechKey = "line:" + sbn.key + ":" + digest
-            if (alert.kind == "picture" || alert.kind == "slip") {
-                val attachedUri = messages.lastOrNull { message ->
-                    message.timestamp == item.timestampMs &&
-                        message.dataMimeType?.startsWith("image/") == true
-                }?.dataUri
-                val imageAvailable = try {
-                    SlipImageReader.fromNotification(this, notification, attachedUri, allowUnlabeled = alert.kind == "slip") { amount ->
-                        if (amount == null) {
-                            VoiceHealth.slipOcrStatus(this, "Android แนบภาพมา แต่ OCR ไม่พบยอดเงินที่อ่านได้")
-                            SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
-                        } else {
-                            VoiceHealth.slipOcrStatus(this, "OCR อ่านยอดจากภาพ LINE OA ที่แนบมาได้")
-                            SpeechEngine.speak(
-                                this, "พบยอดในรูปสลิป $amount บาทแล้วเด้อ", speechKey, 30_000L
-                            )
-                        }
-                    }
-                } catch (_: Exception) {
-                    false
-                }
-                if (!imageAvailable) {
-                    VoiceHealth.slipOcrStatus(this, "LINE OA แจ้งรูปภาพ แต่ Android ไม่แนบไฟล์ภาพให้แอปอ่าน")
-                    SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
-                }
-            } else {
-                SpeechEngine.speak(this, alert.phrase, speechKey, 30_000L)
+            val speechKey = "line:" + sbn.key + ":" + alert.kind
+            val type = when {
+                LineAnnouncementPolicy.isPicture(item.body, item.hasPicture) && slipVoice -> SpeechType.PICTURE
+                !LineAnnouncementPolicy.isPicture(item.body, item.hasPicture) && customerVoice -> SpeechType.CUSTOMER
+                else -> null
             }
+            // Only verified Firebase payment events can announce a payment amount.
+            val phrase = type?.let { Preferences.speech(this, it) }
+            if (phrase != null) SpeechEngine.speak(this, phrase, speechKey, 5_000L)
         }
     }
 

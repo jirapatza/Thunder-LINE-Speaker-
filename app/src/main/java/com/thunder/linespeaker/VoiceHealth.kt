@@ -25,8 +25,11 @@ internal object VoiceHealth {
         listenerBound = false
     }
 
-    fun receivedLineNotice(context: Context) {
-        prefs(context).edit().putLong("last_line_notice", System.currentTimeMillis()).apply()
+    fun receivedLineNotice(context: Context, postedAtMs: Long, receivedAtMs: Long) {
+        prefs(context).edit()
+            .putLong("last_line_notice", receivedAtMs)
+            .putLong("line_post_to_listener_ms", if (postedAtMs in 1..receivedAtMs) receivedAtMs - postedAtMs else -1L)
+            .apply()
     }
 
     fun ttsState(context: Context, state: String) {
@@ -44,8 +47,11 @@ internal object VoiceHealth {
             .apply()
     }
 
-    fun speechStarted(context: Context) {
-        prefs(context).edit().putLong("last_speech_start", System.currentTimeMillis()).apply()
+    fun speechStarted(context: Context, queuedDelayMs: Long?) {
+        prefs(context).edit()
+            .putLong("last_speech_start", System.currentTimeMillis())
+            .putLong("speech_queue_ms", queuedDelayMs ?: -1L)
+            .apply()
     }
 
     fun speechFinished(context: Context) {
@@ -68,10 +74,15 @@ internal object VoiceHealth {
                 DateFormat.SHORT, DateFormat.MEDIUM
             ).format(Date(at)) else "ยังไม่มี"
         }
+        fun delay(key: String): String =
+            p.getLong(key, -1L).takeIf { it >= 0 }?.let { "$it มิลลิวินาที" } ?: "ยังไม่มีข้อมูล"
+
         val connection = if (listenerBound) "เชื่อมต่อในขณะนี้" else "ยังไม่พบการเชื่อมต่อในรอบนี้"
         return "ตัวอ่านแจ้งเตือน: $connection\n" +
             "เชื่อมต่อล่าสุด: " + time("last_listener_connect") + "\n" +
             "แจ้งเตือน LINE OA ที่รับล่าสุด: " + time("last_line_notice") + "\n" +
+            "Android โพสต์แจ้งเตือนถึงแอปรับ: " + delay("line_post_to_listener_ms") + "\n" +
+            "เข้าคิวถึงเริ่มพูดล่าสุด: " + delay("speech_queue_ms") + "\n" +
             "สถานะเสียงล่าสุด: $status\n" +
             "สถานะอ่านยอดจากภาพ: " + p.getString("slip_ocr_status", "ยังไม่ได้ลองอ่านภาพ") + "\n" +
             "เริ่มพูดล่าสุด: " + time("last_speech_start") + "\n" +

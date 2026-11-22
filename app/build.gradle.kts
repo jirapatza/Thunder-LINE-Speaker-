@@ -42,7 +42,13 @@ android {
         }
     }
     kotlinOptions { jvmTarget = "17" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        }
+    }
 }
 dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
@@ -50,4 +56,5 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.work:work-runtime:2.10.5")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
