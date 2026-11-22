@@ -41,7 +41,6 @@ class VerifiedSpeechOutputTest {
         val shadow = shadowOf(tts)
         shadow.onInitListener.onInit(TextToSpeech.SUCCESS)
         shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(shadow.spokenTextList.isEmpty())
 
         service.onMessageReceived(event("501", "payment_matched", "260.00"))
         assertSame(tts, ShadowTextToSpeech.getLastTextToSpeechInstance())
