@@ -99,7 +99,7 @@ class LineNotificationService : NotificationListenerService() {
             val speechKey = "line:" + sbn.key + ":" + alert.kind
             val type = when {
                 LineAnnouncementPolicy.isPicture(item.body, item.hasPicture) && slipVoice -> SpeechType.PICTURE
-                (alert.kind == "customer" || alert.kind == "slip") && customerVoice -> SpeechType.CUSTOMER
+                !LineAnnouncementPolicy.isPicture(item.body, item.hasPicture) && customerVoice -> SpeechType.CUSTOMER
                 else -> null
             }
             // Only verified Firebase payment events can announce a payment amount.

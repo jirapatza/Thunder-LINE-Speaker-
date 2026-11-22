@@ -42,7 +42,10 @@ android {
         }
     }
     kotlinOptions { jvmTarget = "17" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
